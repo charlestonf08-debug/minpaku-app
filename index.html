@@ -1,0 +1,1951 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>民泊管理システム</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { DEFAULT: '#4f6ef7', dark: '#3a56d4' },
+            accent: '#f97316',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
+    input[type="number"] { -moz-appearance: textfield; }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .slide-in { animation: slideIn 0.2s ease-out; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .chart-container { position: relative; height: 240px; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } = React;
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const CLEANING_RATE_ONE = 8000;
+const CLEANING_RATE_TWO = 6000;
+const FIXED_EXPENSE_CATEGORIES = ['家賃','電気代','ガス代','水道代','ゴミ回収費','Wi-Fi費'];
+const VARIABLE_EXPENSE_CATEGORIES = ['消耗品','備品','特別費','その他'];
+const MONTHS_JP = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+// ============================================================
+// SUPABASE SETUP
+// ============================================================
+const CONFIG_KEY = 'minpaku_supabase_config';
+
+function getConfig() {
+  try { return JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null'); } catch { return null; }
+}
+
+function saveConfig(url, key) {
+  localStorage.setItem(CONFIG_KEY, JSON.stringify({ url, key }));
+}
+
+let supabaseClient = null;
+function getSupabase() {
+  if (supabaseClient) return supabaseClient;
+  const cfg = getConfig();
+  if (!cfg) return null;
+  supabaseClient = supabase.createClient(cfg.url, cfg.key);
+  return supabaseClient;
+}
+
+// ============================================================
+// UTILITY
+// ============================================================
+function fmt(n) {
+  if (n === null || n === undefined || isNaN(n)) return '¥0';
+  return '¥' + Math.abs(n).toLocaleString('ja-JP');
+}
+
+function fmtSigned(n) {
+  if (!n) return '¥0';
+  return (n < 0 ? '-' : '') + fmt(Math.abs(n));
+}
+
+function today() {
+  const d = new Date();
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+}
+
+function daysInMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+function dayOfWeek(year, month, day) {
+  return new Date(year, month - 1, day).getDay();
+}
+
+function isoDate(year, month, day) {
+  return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
+// ============================================================
+// APP CONTEXT
+// ============================================================
+const AppCtx = createContext(null);
+
+function useApp() { return useContext(AppCtx); }
+
+// ============================================================
+// SETUP SCREEN
+// ============================================================
+function SetupScreen({ onSetup }) {
+  const [url, setUrl] = useState('');
+  const [key, setKey] = useState('');
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (!url.trim() || !key.trim()) { setErr('URLとAnon Keyを入力してください'); return; }
+    setLoading(true); setErr('');
+    try {
+      const client = supabase.createClient(url.trim(), key.trim());
+      const { error } = await client.from('properties').select('id').limit(1);
+      if (error) throw error;
+      saveConfig(url.trim(), key.trim());
+      supabaseClient = null;
+      onSetup();
+    } catch(e) {
+      setErr('接続失敗: ' + (e.message || 'URLまたはKeyを確認してください'));
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="text-4xl mb-3">🏠</div>
+          <h1 className="text-2xl font-bold text-gray-800">民泊管理システム</h1>
+          <p className="text-gray-500 text-sm mt-2">初回設定：Supabase接続情報を入力</p>
+        </div>
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Supabase URL</label>
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="https://xxx.supabase.co" value={url} onChange={e => setUrl(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Anon Key</label>
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="eyJhbGci..." value={key} onChange={e => setKey(e.target.value)} type="password" />
+          </div>
+          {err && <p className="text-red-500 text-sm">{err}</p>}
+          <button type="submit" disabled={loading}
+            className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            {loading ? '接続中...' : '接続して開始'}
+          </button>
+        </form>
+        <p className="text-xs text-gray-400 mt-4 text-center">Supabase Dashboardから取得してください</p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// LOGIN SCREEN
+// ============================================================
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState('');
+  const [pw, setPw] = useState('');
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    setLoading(true); setErr('');
+    try {
+      const sb = getSupabase();
+      const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password: pw });
+      if (error) throw error;
+      onLogin();
+    } catch(e) {
+      setErr('ログイン失敗: ' + (e.message || 'メール・パスワードを確認してください'));
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="text-4xl mb-3">🏠</div>
+          <h1 className="text-2xl font-bold text-gray-800">民泊管理システム</h1>
+          <p className="text-gray-500 text-sm mt-1">かわけん・りょうこ 共同運営</p>
+        </div>
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">メールアドレス</label>
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              type="email" placeholder="mail@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">パスワード</label>
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              type="password" value={pw} onChange={e => setPw(e.target.value)} />
+          </div>
+          {err && <p className="text-red-500 text-sm">{err}</p>}
+          <button type="submit" disabled={loading}
+            className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            {loading ? 'ログイン中...' : 'ログイン'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// SHARED UI COMPONENTS
+// ============================================================
+function Card({ children, className='' }) {
+  return <div className={`bg-white rounded-xl shadow-sm border border-gray-100 ${className}`}>{children}</div>;
+}
+
+function SectionTitle({ children }) {
+  return <h2 className="text-base font-bold text-gray-700 mb-3">{children}</h2>;
+}
+
+function MonthPicker({ year, month, onChange }) {
+  function prev() {
+    let m = month - 1, y = year;
+    if (m < 1) { m = 12; y--; }
+    onChange(y, m);
+  }
+  function next() {
+    let m = month + 1, y = year;
+    if (m > 12) { m = 1; y++; }
+    onChange(y, m);
+  }
+  const isCurrentMonth = (() => { const t = today(); return t.year === year && t.month === month; })();
+  return (
+    <div className="flex items-center gap-3">
+      <button onClick={prev} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors">‹</button>
+      <span className="font-semibold text-gray-800 min-w-[90px] text-center">{year}年{month}月</span>
+      <button onClick={next} disabled={isCurrentMonth} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors disabled:opacity-30">›</button>
+    </div>
+  );
+}
+
+function Badge({ text, color='gray' }) {
+  const colors = { gray:'bg-gray-100 text-gray-600', blue:'bg-blue-100 text-blue-700', green:'bg-green-100 text-green-700', orange:'bg-orange-100 text-orange-700', red:'bg-red-100 text-red-700', purple:'bg-purple-100 text-purple-700' };
+  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors[color]||colors.gray}`}>{text}</span>;
+}
+
+function Modal({ show, onClose, title, children }) {
+  if (!show) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div className="relative bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-2xl">
+          <h3 className="font-bold text-gray-800">{title}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Spinner() {
+  return <div className="flex items-center justify-center py-12"><div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" style={{borderWidth:'3px'}}></div></div>;
+}
+
+function AmountInput({ label, value, onChange, placeholder='0' }) {
+  return (
+    <div>
+      {label && <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>}
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">¥</span>
+        <input type="number" min="0" value={value||''} onChange={e => onChange(Number(e.target.value)||0)}
+          placeholder={placeholder}
+          className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// DATA HOOKS
+// ============================================================
+function useData(table, query) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const sb = getSupabase();
+      let q = sb.from(table).select(query || '*');
+      const { data: rows, error } = await q;
+      if (error) throw error;
+      setData(rows || []);
+    } catch(e) { console.error(table, e); }
+    finally { setLoading(false); }
+  }, [table]);
+
+  useEffect(() => { load(); }, [load]);
+  return { data, loading, reload: load };
+}
+
+// ============================================================
+// SETTINGS PAGE
+// ============================================================
+function SettingsPage() {
+  const [tab, setTab] = useState('staff');
+  const tabs = [
+    { id:'staff', label:'スタッフ' },
+    { id:'transport', label:'交通費' },
+    { id:'system', label:'システム' },
+  ];
+  return (
+    <div className="pb-24">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="flex">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${tab===t.id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="p-4">
+        {tab === 'staff' && <StaffSettings />}
+        {tab === 'transport' && <TransportFeeSettings />}
+        {tab === 'system' && <SystemSettings />}
+      </div>
+    </div>
+  );
+}
+
+function StaffSettings() {
+  const { data: staff, loading, reload } = useData('staff', '*');
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [name, setName] = useState('');
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const sorted = useMemo(() => {
+    const order = { kawaken: 0, ryoko: 1, external: 2 };
+    return [...staff].sort((a,b) => (order[a.type]||2) - (order[b.type]||2));
+  }, [staff]);
+
+  function openAdd() { setEditItem(null); setName(''); setErr(''); setShowForm(true); }
+  function openEdit(s) { setEditItem(s); setName(s.name); setErr(''); setShowForm(true); }
+
+  async function save() {
+    if (!name.trim()) { setErr('名前を入力してください'); return; }
+    setSaving(true);
+    try {
+      const sb = getSupabase();
+      if (editItem) {
+        await sb.from('staff').update({ name: name.trim() }).eq('id', editItem.id);
+      } else {
+        await sb.from('staff').insert({ name: name.trim(), type: 'external', active: true });
+      }
+      setShowForm(false); reload();
+    } catch(e) { setErr(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function toggleActive(s) {
+    if (s.type !== 'external') return;
+    await getSupabase().from('staff').update({ active: !s.active }).eq('id', s.id);
+    reload();
+  }
+
+  const typeLabel = { kawaken:'かわけん', ryoko:'りょうこ', external:'外部' };
+  const typeColor = { kawaken:'blue', ryoko:'purple', external:'gray' };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <SectionTitle>スタッフ管理</SectionTitle>
+        <button onClick={openAdd} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium">+ 追加</button>
+      </div>
+      {loading ? <Spinner /> : (
+        <div className="space-y-2">
+          {sorted.map(s => (
+            <Card key={s.id} className="p-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${s.type==='kawaken'?'bg-blue-100 text-blue-700':s.type==='ryoko'?'bg-purple-100 text-purple-700':'bg-gray-100 text-gray-600'}`}>
+                  {s.name[0]}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-800 text-sm">{s.name}</p>
+                  <Badge text={typeLabel[s.type]||s.type} color={typeColor[s.type]||'gray'} />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {!s.active && <Badge text="無効" color="red" />}
+                {s.type === 'external' && (
+                  <>
+                    <button onClick={() => openEdit(s)} className="text-xs text-blue-600 px-2 py-1 border border-blue-200 rounded-lg">編集</button>
+                    <button onClick={() => toggleActive(s)} className={`text-xs px-2 py-1 border rounded-lg ${s.active ? 'text-red-500 border-red-200' : 'text-green-600 border-green-200'}`}>
+                      {s.active ? '無効化' : '有効化'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+      <Modal show={showForm} onClose={() => setShowForm(false)} title={editItem ? 'スタッフ編集' : '外部スタッフ追加'}>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">名前</label>
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="例：田中さん" value={name} onChange={e => setName(e.target.value)} autoFocus />
+          </div>
+          {err && <p className="text-red-500 text-sm">{err}</p>}
+          <button onClick={save} disabled={saving}
+            className="w-full bg-blue-600 text-white rounded-lg py-2.5 font-medium disabled:opacity-50">
+            {saving ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+function TransportFeeSettings() {
+  const { data: staff } = useData('staff', '*');
+  const { data: properties } = useData('properties', '*');
+  const { data: fees, reload } = useData('staff_transport_fees', '*');
+  const [saving, setSaving] = useState({});
+
+  const activeStaff = useMemo(() => {
+    const order = { kawaken:0, ryoko:1, external:2 };
+    return staff.filter(s => s.active).sort((a,b)=>(order[a.type]||2)-(order[b.type]||2));
+  }, [staff]);
+
+  const sortedProps = useMemo(() => [...properties].sort((a,b)=>a.sort_order-b.sort_order), [properties]);
+
+  function getFee(staffId, propId) {
+    const f = fees.find(x => x.staff_id === staffId && x.property_id === propId);
+    return f ? f.amount : 0;
+  }
+
+  async function setFee(staffId, propId, amount) {
+    const key = `${staffId}-${propId}`;
+    setSaving(s => ({ ...s, [key]: true }));
+    try {
+      const sb = getSupabase();
+      const existing = fees.find(x => x.staff_id === staffId && x.property_id === propId);
+      if (existing) {
+        await sb.from('staff_transport_fees').update({ amount }).eq('id', existing.id);
+      } else {
+        await sb.from('staff_transport_fees').insert({ staff_id: staffId, property_id: propId, amount });
+      }
+      reload();
+    } finally { setSaving(s => { const n={...s}; delete n[key]; return n; }); }
+  }
+
+  return (
+    <div>
+      <SectionTitle>交通費設定（スタッフ × 物件）</SectionTitle>
+      <p className="text-xs text-gray-500 mb-4">各スタッフの物件別交通費（固定額）を設定してください</p>
+      {activeStaff.map(s => (
+        <Card key={s.id} className="p-4 mb-3">
+          <p className="font-medium text-gray-800 mb-3">{s.name}</p>
+          <div className="space-y-2">
+            {sortedProps.map(p => {
+              const key = `${s.id}-${p.id}`;
+              return (
+                <div key={p.id} className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-600 w-16">{p.name}</span>
+                  <div className="relative flex-1 max-w-[160px]">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">¥</span>
+                    <input type="number" min="0" defaultValue={getFee(s.id, p.id)}
+                      className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onBlur={e => setFee(s.id, p.id, Number(e.target.value)||0)} />
+                  </div>
+                  {saving[key] && <span className="text-xs text-blue-500">保存中</span>}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function SystemSettings() {
+  async function handleLogout() {
+    await getSupabase().auth.signOut();
+    window.location.reload();
+  }
+  function handleResetConfig() {
+    if (confirm('Supabase設定をリセットしますか？再ログインが必要になります。')) {
+      localStorage.removeItem(CONFIG_KEY);
+      supabaseClient = null;
+      window.location.reload();
+    }
+  }
+  return (
+    <div className="space-y-3">
+      <SectionTitle>システム設定</SectionTitle>
+      <Card className="p-4">
+        <p className="text-sm font-medium text-gray-700 mb-1">Supabase接続</p>
+        <p className="text-xs text-gray-500 mb-3">接続済み</p>
+        <button onClick={handleResetConfig} className="text-sm text-orange-600 border border-orange-200 px-4 py-2 rounded-lg">設定をリセット</button>
+      </Card>
+      <Card className="p-4">
+        <p className="text-sm font-medium text-gray-700 mb-3">ログアウト</p>
+        <button onClick={handleLogout} className="text-sm text-red-600 border border-red-200 px-4 py-2 rounded-lg">ログアウト</button>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// SHIFT PAGE
+// ============================================================
+function ShiftsPage() {
+  const { data: properties } = useData('properties', '*');
+  const { data: staff } = useData('staff', '*');
+  const [viewMode, setViewMode] = useState('list'); // 'calendar' | 'list'
+  const [selYear, setSelYear] = useState(today().year);
+  const [selMonth, setSelMonth] = useState(today().month);
+  const [shifts, setShifts] = useState([]);
+  const [shiftStaff, setShiftStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+  const [filterProp, setFilterProp] = useState('all');
+  const [filterStaff, setFilterStaff] = useState('all');
+  const [editShift, setEditShift] = useState(null);
+
+  const sortedProps = useMemo(() => [...properties].sort((a,b)=>a.sort_order-b.sort_order), [properties]);
+  const activeStaff = useMemo(() => staff.filter(s=>s.active), [staff]);
+
+  async function loadShifts() {
+    setLoading(true);
+    try {
+      const sb = getSupabase();
+      const from = isoDate(selYear, selMonth, 1);
+      const to = isoDate(selYear, selMonth, daysInMonth(selYear, selMonth));
+      const { data: rows } = await sb.from('cleaning_shifts').select('*').gte('date', from).lte('date', to).order('date');
+      const ids = (rows||[]).map(r=>r.id);
+      let staffRows = [];
+      if (ids.length > 0) {
+        const { data: sr } = await sb.from('cleaning_shift_staff').select('*').in('shift_id', ids);
+        staffRows = sr || [];
+      }
+      setShifts(rows || []);
+      setShiftStaff(staffRows);
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadShifts(); }, [selYear, selMonth]);
+
+  const enrichedShifts = useMemo(() => {
+    return shifts.map(sh => {
+      const prop = properties.find(p => p.id === sh.property_id);
+      const staffList = shiftStaff.filter(ss => ss.shift_id === sh.id).map(ss => {
+        const s = staff.find(x => x.id === ss.staff_id);
+        return { ...ss, staffName: s?.name || '不明', staffType: s?.type };
+      });
+      return { ...sh, prop, staffList };
+    });
+  }, [shifts, shiftStaff, properties, staff]);
+
+  const filteredShifts = useMemo(() => {
+    return enrichedShifts.filter(sh => {
+      if (filterProp !== 'all' && sh.property_id !== filterProp) return false;
+      if (filterStaff !== 'all' && !sh.staffList.some(x => x.staff_id === filterStaff)) return false;
+      return true;
+    });
+  }, [enrichedShifts, filterProp, filterStaff]);
+
+  const propColor = (name) => ({ '山王':'blue', '玉津':'purple', '橘':'orange' }[name] || 'gray');
+
+  async function completeShift(sh) {
+    if (!confirm(`「${sh.prop?.name} ${sh.date}」を完了にしますか？\n費用が自動計算されます。`)) return;
+    const sb = getSupabase();
+    const { data: tFees } = await sb.from('staff_transport_fees').select('*');
+    const numStaff = sh.staffList.length;
+    const cleaningFee = numStaff === 1 ? CLEANING_RATE_ONE : CLEANING_RATE_TWO;
+
+    for (const ss of sh.staffList) {
+      const tf = (tFees||[]).find(x => x.staff_id === ss.staff_id && x.property_id === sh.property_id);
+      const transport = tf ? tf.amount : 0;
+      const total = cleaningFee + transport;
+      await sb.from('cleaning_shift_staff').update({
+        cleaning_fee: cleaningFee, transport_fee: transport, total_fee: total
+      }).eq('id', ss.id);
+    }
+    await sb.from('cleaning_shifts').update({ status: 'completed' }).eq('id', sh.id);
+    loadShifts();
+  }
+
+  async function deleteShift(sh) {
+    if (!confirm('このシフトを削除しますか？')) return;
+    await getSupabase().from('cleaning_shifts').delete().eq('id', sh.id);
+    loadShifts();
+  }
+
+  return (
+    <div className="pb-24">
+      <div className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-10">
+        <div className="flex items-center justify-between mb-3">
+          <MonthPicker year={selYear} month={selMonth} onChange={(y,m)=>{setSelYear(y);setSelMonth(m);}} />
+          <div className="flex gap-1">
+            <button onClick={() => setViewMode('list')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode==='list'?'bg-blue-600 text-white':'bg-gray-100 text-gray-600'}`}>リスト</button>
+            <button onClick={() => setViewMode('calendar')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode==='calendar'?'bg-blue-600 text-white':'bg-gray-100 text-gray-600'}`}>カレンダー</button>
+          </div>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <select value={filterProp} onChange={e=>setFilterProp(e.target.value)}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
+            <option value="all">全物件</option>
+            {sortedProps.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <select value={filterStaff} onChange={e=>setFilterStaff(e.target.value)}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
+            <option value="all">全スタッフ</option>
+            {activeStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="p-4">
+        {loading ? <Spinner /> : (
+          viewMode === 'calendar'
+            ? <ShiftCalendar year={selYear} month={selMonth} shifts={filteredShifts} properties={sortedProps} />
+            : <ShiftList shifts={filteredShifts} onComplete={completeShift} onDelete={deleteShift} onEdit={sh=>{setEditShift(sh);setShowAdd(true);}} propColor={propColor} />
+        )}
+      </div>
+
+      <div className="fixed bottom-20 right-4 flex flex-col gap-2">
+        <button onClick={() => { setEditShift(null); setShowAdd(true); }}
+          className="bg-blue-600 text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl hover:bg-blue-700">+</button>
+        <button onClick={() => setShowBulk(true)}
+          className="bg-indigo-500 text-white w-12 h-12 rounded-full shadow-md flex items-center justify-center text-lg hover:bg-indigo-600 self-end" title="一括登録">≡</button>
+      </div>
+
+      {showAdd && (
+        <ShiftForm
+          properties={sortedProps} staff={activeStaff} editShift={editShift}
+          year={selYear} month={selMonth}
+          onClose={() => { setShowAdd(false); setEditShift(null); }}
+          onSaved={loadShifts}
+        />
+      )}
+      {showBulk && (
+        <BulkShiftForm
+          properties={sortedProps} staff={activeStaff} year={selYear} month={selMonth}
+          onClose={() => setShowBulk(false)} onSaved={loadShifts}
+        />
+      )}
+    </div>
+  );
+}
+
+function ShiftList({ shifts, onComplete, onDelete, onEdit, propColor }) {
+  if (shifts.length === 0) {
+    return <div className="text-center py-12 text-gray-400"><p className="text-4xl mb-3">📋</p><p>シフトがありません</p></div>;
+  }
+  return (
+    <div className="space-y-2">
+      {shifts.map(sh => (
+        <Card key={sh.id} className="p-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <Badge text={sh.prop?.name||'?'} color={propColor(sh.prop?.name)} />
+                <Badge text={sh.status==='completed'?'完了':'予定'} color={sh.status==='completed'?'green':'orange'} />
+                <span className="text-xs text-gray-500">{sh.date}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {sh.staffList.map(ss => (
+                  <div key={ss.id} className="flex flex-col items-start">
+                    <span className="text-sm text-gray-700">{ss.staffName}</span>
+                    {sh.status === 'completed' && ss.total_fee > 0 && (
+                      <span className="text-xs text-green-600">{fmt(ss.cleaning_fee)} + 交通費{fmt(ss.transport_fee)}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {sh.notes && <p className="text-xs text-gray-500 mt-1">{sh.notes}</p>}
+            </div>
+            <div className="flex flex-col gap-1">
+              {sh.status === 'scheduled' && (
+                <>
+                  <button onClick={() => onComplete(sh)} className="text-xs bg-green-500 text-white px-3 py-1.5 rounded-lg">完了</button>
+                  <button onClick={() => onEdit(sh)} className="text-xs border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg">編集</button>
+                </>
+              )}
+              <button onClick={() => onDelete(sh)} className="text-xs text-red-400 px-3 py-1.5 rounded-lg border border-red-100">削除</button>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function ShiftCalendar({ year, month, shifts, properties }) {
+  const days = daysInMonth(year, month);
+  const firstDow = dayOfWeek(year, month, 1);
+  const cells = [...Array(firstDow).fill(null), ...Array.from({length:days},(_,i)=>i+1)];
+  const weekDays = ['日','月','火','水','木','金','土'];
+  const propColors = { '山王':'bg-blue-100 text-blue-700', '玉津':'bg-purple-100 text-purple-700', '橘':'bg-orange-100 text-orange-700' };
+
+  function getShiftsForDay(d) {
+    if (!d) return [];
+    const dateStr = isoDate(year, month, d);
+    return shifts.filter(sh => sh.date === dateStr);
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-7 mb-1">
+        {weekDays.map((d,i) => (
+          <div key={i} className={`text-center text-xs font-medium py-1 ${i===0?'text-red-500':i===6?'text-blue-500':'text-gray-400'}`}>{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-0.5">
+        {cells.map((d, i) => {
+          const dow = i % 7;
+          const dayShifts = getShiftsForDay(d);
+          return (
+            <div key={i} className={`min-h-[56px] rounded-lg p-1 ${d ? 'bg-white border border-gray-100' : ''}`}>
+              {d && (
+                <>
+                  <p className={`text-xs font-medium mb-0.5 ${dow===0?'text-red-500':dow===6?'text-blue-500':'text-gray-700'}`}>{d}</p>
+                  {dayShifts.map(sh => (
+                    <div key={sh.id} className={`text-xs px-1 py-0.5 rounded mb-0.5 truncate ${propColors[sh.prop?.name]||'bg-gray-100 text-gray-600'}`}>
+                      {sh.prop?.name}
+                      {sh.status==='completed' && ' ✓'}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ShiftForm({ properties, staff, editShift, year, month, onClose, onSaved }) {
+  const [date, setDate] = useState(editShift?.date || isoDate(year, month, 1));
+  const [propId, setPropId] = useState(editShift?.property_id || (properties[0]?.id||''));
+  const [selStaff, setSelStaff] = useState([]);
+  const [notes, setNotes] = useState(editShift?.notes || '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const sortedProps = useMemo(() => [...properties].sort((a,b)=>a.sort_order-b.sort_order), [properties]);
+
+  useEffect(() => {
+    if (editShift) {
+      // Pre-select staff if editing - would need to pass shiftStaff
+      setDate(editShift.date);
+      setPropId(editShift.property_id);
+      setNotes(editShift.notes || '');
+    }
+  }, [editShift]);
+
+  function toggleStaff(id) {
+    setSelStaff(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev,id]);
+  }
+
+  async function save() {
+    if (!date) { setErr('日付を選択してください'); return; }
+    if (!propId) { setErr('物件を選択してください'); return; }
+    if (selStaff.length === 0) { setErr('スタッフを1人以上選択してください'); return; }
+    setSaving(true); setErr('');
+    try {
+      const sb = getSupabase();
+      let shiftId;
+      if (editShift) {
+        await sb.from('cleaning_shifts').update({ date, property_id: propId, notes, status:'scheduled' }).eq('id', editShift.id);
+        await sb.from('cleaning_shift_staff').delete().eq('shift_id', editShift.id);
+        shiftId = editShift.id;
+      } else {
+        const { data } = await sb.from('cleaning_shifts').insert({ date, property_id: propId, notes, status:'scheduled' }).select().single();
+        shiftId = data.id;
+      }
+      await sb.from('cleaning_shift_staff').insert(selStaff.map(sid => ({ shift_id: shiftId, staff_id: sid })));
+      onSaved(); onClose();
+    } catch(e) { setErr(e.message); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <Modal show={true} onClose={onClose} title={editShift ? 'シフト編集' : 'シフト追加'}>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">日付</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">物件</label>
+          <div className="flex gap-2 flex-wrap">
+            {sortedProps.map(p => (
+              <button key={p.id} onClick={() => setPropId(p.id)}
+                className={`px-4 py-2 rounded-lg text-sm border font-medium transition-colors ${propId===p.id?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">担当スタッフ（複数可）</label>
+          <div className="flex gap-2 flex-wrap">
+            {staff.map(s => (
+              <button key={s.id} onClick={() => toggleStaff(s.id)}
+                className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${selStaff.includes(s.id)?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+          {selStaff.length > 0 && (
+            <p className="text-xs text-gray-500 mt-1">
+              {selStaff.length}名体制 → 清掃料金 {fmt(selStaff.length===1?CLEANING_RATE_ONE:CLEANING_RATE_TWO)}/人
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">メモ（任意）</label>
+          <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={notes} onChange={e=>setNotes(e.target.value)} placeholder="備考など" />
+        </div>
+        {err && <p className="text-red-500 text-sm">{err}</p>}
+        <button onClick={save} disabled={saving}
+          className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium disabled:opacity-50">
+          {saving ? '保存中...' : '保存'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function BulkShiftForm({ properties, staff, year, month, onClose, onSaved }) {
+  const [propId, setPropId] = useState(properties[0]?.id||'');
+  const [entries, setEntries] = useState([{ date:'', staffIds:[] }]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const sortedProps = useMemo(() => [...properties].sort((a,b)=>a.sort_order-b.sort_order), [properties]);
+
+  function addEntry() { setEntries(e => [...e, { date:'', staffIds:[] }]); }
+  function removeEntry(i) { setEntries(e => e.filter((_,j)=>j!==i)); }
+  function updateEntry(i, field, val) { setEntries(e => { const n=[...e]; n[i]={...n[i],[field]:val}; return n; }); }
+  function toggleEntryStaff(i, sid) {
+    setEntries(e => {
+      const n=[...e];
+      const ids = n[i].staffIds;
+      n[i]={...n[i], staffIds: ids.includes(sid)?ids.filter(x=>x!==sid):[...ids,sid]};
+      return n;
+    });
+  }
+
+  async function save() {
+    const valid = entries.filter(e => e.date && e.staffIds.length > 0);
+    if (valid.length === 0) { setErr('有効なシフトを1件以上入力してください'); return; }
+    setSaving(true); setErr('');
+    try {
+      const sb = getSupabase();
+      for (const entry of valid) {
+        const { data } = await sb.from('cleaning_shifts').insert({
+          date: entry.date, property_id: propId, status: 'scheduled'
+        }).select().single();
+        await sb.from('cleaning_shift_staff').insert(entry.staffIds.map(sid => ({
+          shift_id: data.id, staff_id: sid
+        })));
+      }
+      onSaved(); onClose();
+    } catch(e) { setErr(e.message); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <Modal show={true} onClose={onClose} title={`${year}年${month}月 一括シフト登録`}>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">物件（共通）</label>
+          <div className="flex gap-2 flex-wrap">
+            {sortedProps.map(p => (
+              <button key={p.id} onClick={() => setPropId(p.id)}
+                className={`px-3 py-1.5 rounded-lg text-sm border ${propId===p.id?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+          {entries.map((entry, i) => (
+            <div key={i} className="border border-gray-200 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-gray-500">シフト {i+1}</span>
+                {entries.length > 1 && (
+                  <button onClick={() => removeEntry(i)} className="text-red-400 text-xs">削除</button>
+                )}
+              </div>
+              <input type="date" value={entry.date} onChange={e=>updateEntry(i,'date',e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <div className="flex flex-wrap gap-1.5">
+                {staff.map(s => (
+                  <button key={s.id} onClick={() => toggleEntryStaff(i, s.id)}
+                    className={`px-2.5 py-1 rounded-lg text-xs border ${entry.staffIds.includes(s.id)?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <button onClick={addEntry} className="w-full border-2 border-dashed border-gray-300 text-gray-500 py-2 rounded-xl text-sm">
+          + シフトを追加
+        </button>
+        {err && <p className="text-red-500 text-sm">{err}</p>}
+        <button onClick={save} disabled={saving}
+          className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium disabled:opacity-50">
+          {saving ? '登録中...' : `${entries.filter(e=>e.date&&e.staffIds.length>0).length}件を一括登録`}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================
+// FINANCE PAGE
+// ============================================================
+function FinancePage() {
+  const [tab, setTab] = useState('revenue');
+  const [selYear, setSelYear] = useState(today().year);
+  const [selMonth, setSelMonth] = useState(today().month);
+  const tabs = [
+    { id:'revenue', label:'売上' },
+    { id:'fixed', label:'固定費' },
+    { id:'variable', label:'変動費' },
+    { id:'cleaning', label:'清掃費' },
+  ];
+
+  return (
+    <div className="pb-24">
+      <div className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-10">
+        <div className="flex items-center justify-center mb-3">
+          <MonthPicker year={selYear} month={selMonth} onChange={(y,m)=>{setSelYear(y);setSelMonth(m);}} />
+        </div>
+        <div className="flex">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${tab===t.id?'border-blue-500 text-blue-600':'border-transparent text-gray-500'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="p-4">
+        {tab==='revenue' && <RevenueSection year={selYear} month={selMonth} />}
+        {tab==='fixed' && <FixedExpenseSection year={selYear} month={selMonth} />}
+        {tab==='variable' && <VariableExpenseSection year={selYear} month={selMonth} />}
+        {tab==='cleaning' && <CleaningExpenseSection year={selYear} month={selMonth} />}
+      </div>
+    </div>
+  );
+}
+
+function RevenueSection({ year, month }) {
+  const { data: properties } = useData('properties', '*');
+  const [revenues, setRevenues] = useState({});
+  const [saving, setSaving] = useState({});
+
+  const sortedProps = useMemo(() => [...properties].sort((a,b)=>a.sort_order-b.sort_order), [properties]);
+
+  useEffect(() => {
+    async function load() {
+      const sb = getSupabase();
+      const { data } = await sb.from('monthly_revenue').select('*').eq('year', year).eq('month', month);
+      const map = {};
+      (data||[]).forEach(r => { map[r.property_id] = r.amount; });
+      setRevenues(map);
+    }
+    if (properties.length) load();
+  }, [year, month, properties]);
+
+  async function saveRevenue(propId, amount) {
+    setSaving(s => ({...s, [propId]: true}));
+    try {
+      const sb = getSupabase();
+      const { data: existing } = await sb.from('monthly_revenue').select('id').eq('property_id', propId).eq('year', year).eq('month', month).single();
+      if (existing) {
+        await sb.from('monthly_revenue').update({ amount }).eq('id', existing.id);
+      } else {
+        await sb.from('monthly_revenue').insert({ property_id: propId, year, month, amount });
+      }
+      setRevenues(r => ({...r, [propId]: amount}));
+    } finally { setSaving(s => { const n={...s}; delete n[propId]; return n; }); }
+  }
+
+  const ownerLabel = { kawaken:'かわけん受取', ryoko:'りょうこ受取' };
+
+  return (
+    <div>
+      <SectionTitle>売上入力</SectionTitle>
+      <div className="space-y-3">
+        {sortedProps.map(p => (
+          <Card key={p.id} className="p-4">
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <p className="font-medium text-gray-800">{p.name}</p>
+                <p className="text-xs text-gray-500">{ownerLabel[p.revenue_owner]}</p>
+              </div>
+              {saving[p.id] && <span className="text-xs text-blue-500">保存中...</span>}
+            </div>
+            <AmountInput
+              value={revenues[p.id]||0}
+              onChange={amount => {
+                setRevenues(r => ({...r, [p.id]: amount}));
+                saveRevenue(p.id, amount);
+              }}
+            />
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FixedExpenseSection({ year, month }) {
+  const { data: properties } = useData('properties', '*');
+  const [expenses, setExpenses] = useState({});
+  const [saving, setSaving] = useState({});
+
+  const jointProps = useMemo(() => properties.filter(p => p.include_settlement).sort((a,b)=>a.sort_order-b.sort_order), [properties]);
+
+  useEffect(() => {
+    async function load() {
+      const sb = getSupabase();
+      const { data } = await sb.from('monthly_fixed_expenses').select('*').eq('year', year).eq('month', month);
+      const map = {};
+      (data||[]).forEach(r => {
+        const k = `${r.property_id}-${r.category}`;
+        map[k] = { id: r.id, amount: r.amount };
+      });
+      setExpenses(map);
+    }
+    if (properties.length) load();
+  }, [year, month, properties]);
+
+  async function saveExpense(propId, category, amount) {
+    const k = `${propId}-${category}`;
+    setSaving(s => ({...s, [k]: true}));
+    try {
+      const sb = getSupabase();
+      const existing = expenses[k];
+      if (existing?.id) {
+        await sb.from('monthly_fixed_expenses').update({ amount }).eq('id', existing.id);
+      } else {
+        const { data } = await sb.from('monthly_fixed_expenses').insert({ property_id: propId, year, month, category, amount, payer:'kawaken' }).select().single();
+        setExpenses(e => ({...e, [k]: { id: data.id, amount }}));
+      }
+      setExpenses(e => ({...e, [k]: {...(e[k]||{}), amount}}));
+    } finally { setSaving(s => { const n={...s}; delete n[k]; return n; }); }
+  }
+
+  function getAmount(propId, cat) {
+    return expenses[`${propId}-${cat}`]?.amount || 0;
+  }
+
+  return (
+    <div>
+      <SectionTitle>固定費入力（かわけん立替）</SectionTitle>
+      <div className="space-y-4">
+        {jointProps.map(p => (
+          <Card key={p.id} className="p-4">
+            <p className="font-bold text-gray-800 mb-3">{p.name}</p>
+            <div className="space-y-3">
+              {FIXED_EXPENSE_CATEGORIES.map(cat => (
+                <div key={cat} className="flex items-center gap-3">
+                  <span className="text-sm text-gray-600 w-20 flex-shrink-0">{cat}</span>
+                  <div className="flex-1">
+                    <AmountInput
+                      value={getAmount(p.id, cat)}
+                      onChange={amount => {
+                        const k = `${p.id}-${cat}`;
+                        setExpenses(e => ({...e, [k]: {...(e[k]||{}), amount}}));
+                        saveExpense(p.id, cat, amount);
+                      }}
+                    />
+                  </div>
+                  {saving[`${p.id}-${cat}`] && <span className="text-xs text-blue-500 flex-shrink-0">保存</span>}
+                </div>
+              ))}
+              <div className="border-t pt-2 text-right">
+                <span className="text-sm text-gray-500">小計: </span>
+                <span className="text-sm font-bold text-gray-800">
+                  {fmt(FIXED_EXPENSE_CATEGORIES.reduce((sum,cat) => sum + (getAmount(p.id,cat)||0), 0))}
+                </span>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VariableExpenseSection({ year, month }) {
+  const { data: properties } = useData('properties', '*');
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ property_id:'', category:'消耗品', amount:0, payer:'kawaken', memo:'' });
+  const [saving, setSaving] = useState(false);
+
+  const sortedProps = useMemo(() => [...properties].sort((a,b)=>a.sort_order-b.sort_order), [properties]);
+
+  async function load() {
+    setLoading(true);
+    const { data } = await getSupabase().from('monthly_variable_expenses').select('*').eq('year', year).eq('month', month).order('created_at', {ascending:false});
+    setItems(data||[]);
+    setLoading(false);
+  }
+
+  useEffect(() => { if(properties.length) load(); }, [year, month, properties]);
+
+  async function saveItem() {
+    if (!form.property_id) { alert('物件を選択してください'); return; }
+    if (!form.amount) { alert('金額を入力してください'); return; }
+    setSaving(true);
+    try {
+      await getSupabase().from('monthly_variable_expenses').insert({ ...form, year, month });
+      setShowForm(false);
+      setForm({ property_id:'', category:'消耗品', amount:0, payer:'kawaken', memo:'' });
+      load();
+    } finally { setSaving(false); }
+  }
+
+  async function deleteItem(id) {
+    if (!confirm('削除しますか？')) return;
+    await getSupabase().from('monthly_variable_expenses').delete().eq('id', id);
+    load();
+  }
+
+  const propName = (id) => properties.find(p=>p.id===id)?.name || '';
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <SectionTitle>変動費</SectionTitle>
+        <button onClick={() => { setForm({property_id:sortedProps[0]?.id||'', category:'消耗品', amount:0, payer:'kawaken', memo:''}); setShowForm(true); }}
+          className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium">+ 追加</button>
+      </div>
+      {loading ? <Spinner /> : (
+        items.length === 0 ? (
+          <div className="text-center py-8 text-gray-400"><p>変動費がありません</p></div>
+        ) : (
+          <div className="space-y-2">
+            {items.map(item => (
+              <Card key={item.id} className="p-3 flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <Badge text={propName(item.property_id)} color="gray" />
+                    <Badge text={item.category} color="blue" />
+                    <Badge text={item.payer==='kawaken'?'かわけん':'りょうこ'} color={item.payer==='kawaken'?'blue':'purple'} />
+                  </div>
+                  <p className="font-bold text-gray-800">{fmt(item.amount)}</p>
+                  {item.memo && <p className="text-xs text-gray-500">{item.memo}</p>}
+                </div>
+                <button onClick={() => deleteItem(item.id)} className="text-red-400 text-xs px-2 py-1 border border-red-100 rounded-lg">削除</button>
+              </Card>
+            ))}
+            <div className="flex justify-between text-sm font-medium text-gray-600 px-1 pt-2">
+              <span>かわけん計: <span className="text-blue-700">{fmt(items.filter(i=>i.payer==='kawaken').reduce((s,i)=>s+i.amount,0))}</span></span>
+              <span>りょうこ計: <span className="text-purple-700">{fmt(items.filter(i=>i.payer==='ryoko').reduce((s,i)=>s+i.amount,0))}</span></span>
+            </div>
+          </div>
+        )
+      )}
+      <Modal show={showForm} onClose={() => setShowForm(false)} title="変動費追加">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">物件</label>
+            <div className="flex gap-2 flex-wrap">
+              {sortedProps.map(p => (
+                <button key={p.id} onClick={() => setForm(f=>({...f, property_id:p.id}))}
+                  className={`px-3 py-1.5 rounded-lg text-sm border ${form.property_id===p.id?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">カテゴリ</label>
+            <div className="flex flex-wrap gap-2">
+              {VARIABLE_EXPENSE_CATEGORIES.map(c => (
+                <button key={c} onClick={() => setForm(f=>({...f,category:c}))}
+                  className={`px-3 py-1.5 rounded-lg text-sm border ${form.category===c?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+          <AmountInput label="金額" value={form.amount} onChange={amount => setForm(f=>({...f,amount}))} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">支払者</label>
+            <div className="flex gap-2">
+              {[['kawaken','かわけん'],['ryoko','りょうこ']].map(([v,l]) => (
+                <button key={v} onClick={() => setForm(f=>({...f,payer:v}))}
+                  className={`flex-1 py-2 rounded-lg text-sm border ${form.payer===v?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">メモ（任意）</label>
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={form.memo} onChange={e=>setForm(f=>({...f,memo:e.target.value}))} />
+          </div>
+          <button onClick={saveItem} disabled={saving}
+            className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium disabled:opacity-50">
+            {saving ? '保存中...' : '追加'}
+          </button>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+function CleaningExpenseSection({ year, month }) {
+  const { data: properties } = useData('properties', '*');
+  const { data: staffData } = useData('staff', '*');
+  const [shifts, setShifts] = useState([]);
+  const [shiftStaff, setShiftStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const sb = getSupabase();
+      const from = isoDate(year, month, 1);
+      const to = isoDate(year, month, daysInMonth(year, month));
+      const { data: rows } = await sb.from('cleaning_shifts').select('*').gte('date', from).lte('date', to).eq('status', 'completed');
+      const ids = (rows||[]).map(r=>r.id);
+      let staffRows = [];
+      if (ids.length > 0) {
+        const { data: sr } = await sb.from('cleaning_shift_staff').select('*').in('shift_id', ids);
+        staffRows = sr || [];
+      }
+      setShifts(rows||[]);
+      setShiftStaff(staffRows);
+      setLoading(false);
+    }
+    load();
+  }, [year, month]);
+
+  const summary = useMemo(() => {
+    const byStaff = {};
+    for (const ss of shiftStaff) {
+      if (!byStaff[ss.staff_id]) byStaff[ss.staff_id] = { count:0, cleaning:0, transport:0 };
+      byStaff[ss.staff_id].count++;
+      byStaff[ss.staff_id].cleaning += ss.cleaning_fee||0;
+      byStaff[ss.staff_id].transport += ss.transport_fee||0;
+    }
+    return byStaff;
+  }, [shiftStaff]);
+
+  return (
+    <div>
+      <SectionTitle>清掃費集計（完了分・自動計算）</SectionTitle>
+      {loading ? <Spinner /> : (
+        Object.keys(summary).length === 0 ? (
+          <div className="text-center py-8 text-gray-400"><p>完了シフトがありません</p></div>
+        ) : (
+          <div className="space-y-2">
+            {Object.entries(summary).map(([sid, data]) => {
+              const s = staffData.find(x=>x.id===sid);
+              return (
+                <Card key={sid} className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-medium text-gray-800">{s?.name||'不明'}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">清掃{data.count}回</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-gray-800">{fmt(data.cleaning + data.transport)}</p>
+                      <p className="text-xs text-gray-500">清掃{fmt(data.cleaning)} + 交通費{fmt(data.transport)}</p>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+            <Card className="p-4 bg-blue-50 border-blue-100">
+              <div className="flex justify-between font-bold">
+                <span className="text-blue-800">合計支払額</span>
+                <span className="text-blue-800">{fmt(shiftStaff.reduce((s,x)=>s+(x.total_fee||0),0))}</span>
+              </div>
+            </Card>
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// SUMMARY PAGE (精算サマリー)
+// ============================================================
+function SummaryPage() {
+  const [selYear, setSelYear] = useState(today().year);
+  const [selMonth, setSelMonth] = useState(today().month);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [locked, setLocked] = useState(false);
+  const [locking, setLocking] = useState(false);
+
+  async function loadData(y, m) {
+    setLoading(true);
+    try {
+      const sb = getSupabase();
+      const [
+        { data: props },
+        { data: staffList },
+        { data: revenues },
+        { data: fixedExps },
+        { data: varExps },
+        { data: lockRow }
+      ] = await Promise.all([
+        sb.from('properties').select('*'),
+        sb.from('staff').select('*'),
+        sb.from('monthly_revenue').select('*').eq('year', y).eq('month', m),
+        sb.from('monthly_fixed_expenses').select('*').eq('year', y).eq('month', m),
+        sb.from('monthly_variable_expenses').select('*').eq('year', y).eq('month', m),
+        sb.from('month_locks').select('*').eq('year', y).eq('month', m).maybeSingle()
+      ]);
+
+      // Get completed shifts for the month
+      const from = isoDate(y, m, 1);
+      const to = isoDate(y, m, daysInMonth(y, m));
+      const { data: shifts } = await sb.from('cleaning_shifts').select('*').gte('date', from).lte('date', to).eq('status', 'completed');
+      const ids = (shifts||[]).map(r=>r.id);
+      let shiftStaff = [];
+      if (ids.length > 0) {
+        const { data: ss } = await sb.from('cleaning_shift_staff').select('*').in('shift_id', ids);
+        shiftStaff = ss || [];
+      }
+
+      const jointProps = (props||[]).filter(p => p.include_settlement);
+      const tachibana = (props||[]).find(p => !p.include_settlement);
+
+      // Revenue
+      const sanno = props?.find(p=>p.name==='山王');
+      const tamatsu = props?.find(p=>p.name==='玉津');
+      const sannoRev = revenues?.find(r=>r.property_id===sanno?.id)?.amount || 0;
+      const tamatsuRev = revenues?.find(r=>r.property_id===tamatsu?.id)?.amount || 0;
+      const tachiRev = tachibana ? (revenues?.find(r=>r.property_id===tachibana.id)?.amount||0) : 0;
+      const totalJointRevenue = sannoRev + tamatsuRev;
+
+      // Fixed expenses (joint props only)
+      const jointFixedExp = (fixedExps||[]).filter(e => jointProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount, 0);
+
+      // Variable expenses (joint props + split)
+      const jointVarExps = (varExps||[]).filter(e => jointProps.some(p=>p.id===e.property_id));
+      const kawakVarExp = jointVarExps.filter(e=>e.payer==='kawaken').reduce((s,e)=>s+e.amount,0);
+      const ryokoVarExp = jointVarExps.filter(e=>e.payer==='ryoko').reduce((s,e)=>s+e.amount,0);
+
+      // Cleaning fees from shifts (joint props only)
+      const jointShiftIds = (shifts||[]).filter(sh => jointProps.some(p=>p.id===sh.property_id)).map(sh=>sh.id);
+      const jointShiftStaff = shiftStaff.filter(ss => jointShiftIds.includes(ss.shift_id));
+
+      const kawakStaff = staffList?.find(s=>s.type==='kawaken');
+      const ryokoStaff = staffList?.find(s=>s.type==='ryoko');
+
+      const kawakCleaningFee = jointShiftStaff.filter(ss=>ss.staff_id===kawakStaff?.id).reduce((s,ss)=>s+ss.total_fee,0);
+      const ryokoCleaningFee = jointShiftStaff.filter(ss=>ss.staff_id===ryokoStaff?.id).reduce((s,ss)=>s+ss.total_fee,0);
+      const externalCleaningFee = jointShiftStaff.filter(ss=>{
+        const st = staffList?.find(x=>x.id===ss.staff_id);
+        return st?.type==='external';
+      }).reduce((s,ss)=>s+ss.total_fee,0);
+
+      const totalExpenses = jointFixedExp + externalCleaningFee + kawakVarExp + ryokoVarExp + kawakCleaningFee + ryokoCleaningFee;
+      const profit = totalJointRevenue - totalExpenses;
+      const eachShare = Math.floor(profit / 2);
+
+      const kawakActual = sannoRev + kawakCleaningFee - jointFixedExp - externalCleaningFee - kawakVarExp;
+      const settlementAmount = kawakActual - eachShare;
+
+      // Staff payment summary
+      const staffPayments = {};
+      for (const ss of shiftStaff) { // all shifts for staff detail
+        const st = staffList?.find(x=>x.id===ss.staff_id);
+        if (!st || st.type==='kawaken' || st.type==='ryoko') continue;
+        if (!staffPayments[ss.staff_id]) staffPayments[ss.staff_id] = { name:st.name, count:0, cleaning:0, transport:0 };
+        staffPayments[ss.staff_id].count++;
+        staffPayments[ss.staff_id].cleaning += ss.cleaning_fee||0;
+        staffPayments[ss.staff_id].transport += ss.transport_fee||0;
+      }
+
+      // Tachibana summary
+      const tachiFixedExp = tachibana ? (fixedExps||[]).filter(e=>e.property_id===tachibana.id).reduce((s,e)=>s+e.amount,0) : 0;
+      const tachiShiftIds = tachibana ? (shifts||[]).filter(sh=>sh.property_id===tachibana.id).map(sh=>sh.id) : [];
+      const tachiCleaningFee = shiftStaff.filter(ss=>tachiShiftIds.includes(ss.shift_id)).reduce((s,ss)=>s+ss.total_fee,0);
+      const tachiVarExp = tachibana ? (varExps||[]).filter(e=>e.property_id===tachibana.id).reduce((s,e)=>s+e.amount,0) : 0;
+
+      setData({
+        sannoRev, tamatsuRev, tachiRev, totalJointRevenue,
+        jointFixedExp, externalCleaningFee, kawakVarExp, ryokoVarExp, kawakCleaningFee, ryokoCleaningFee,
+        totalExpenses, profit, eachShare, kawakActual, settlementAmount,
+        staffPayments,
+        tachibana: { revenue: tachiRev, fixedExp: tachiFixedExp, cleaningFee: tachiCleaningFee, varExp: tachiVarExp, profit: tachiRev - tachiFixedExp - tachiCleaningFee - tachiVarExp }
+      });
+      setLocked(!!lockRow);
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadData(selYear, selMonth); }, [selYear, selMonth]);
+
+  async function toggleLock() {
+    setLocking(true);
+    try {
+      const sb = getSupabase();
+      if (locked) {
+        await sb.from('month_locks').delete().eq('year', selYear).eq('month', selMonth);
+        setLocked(false);
+      } else {
+        if (!confirm(`${selYear}年${selMonth}月を精算確定しますか？確定後は編集できません。`)) { setLocking(false); return; }
+        await sb.from('month_locks').insert({ year: selYear, month: selMonth });
+        setLocked(true);
+      }
+    } finally { setLocking(false); }
+  }
+
+  return (
+    <div className="pb-24">
+      <div className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-10">
+        <div className="flex items-center justify-between">
+          <MonthPicker year={selYear} month={selMonth} onChange={(y,m)=>{setSelYear(y);setSelMonth(m);}} />
+          <button onClick={toggleLock} disabled={locking}
+            className={`text-xs px-3 py-1.5 rounded-lg border font-medium ${locked?'border-green-300 text-green-600 bg-green-50':'border-gray-300 text-gray-500'}`}>
+            {locked ? '🔒 確定済' : '精算確定'}
+          </button>
+        </div>
+      </div>
+
+      {loading ? <Spinner /> : !data ? <div className="text-center py-12 text-gray-400">データなし</div> : (
+        <div className="p-4 space-y-4 slide-in">
+          {/* Revenue */}
+          <Card className="p-4">
+            <p className="font-bold text-gray-700 mb-3 text-sm">■ 売上（山王・玉津）</p>
+            <div className="space-y-2">
+              <Row label="山王売上" value={fmt(data.sannoRev)} sub="かわけん受取" />
+              <Row label="玉津売上" value={fmt(data.tamatsuRev)} sub="りょうこ受取" />
+              <div className="border-t pt-2 mt-1">
+                <Row label="合計売上" value={fmt(data.totalJointRevenue)} bold />
+              </div>
+            </div>
+          </Card>
+
+          {/* Expenses */}
+          <Card className="p-4">
+            <p className="font-bold text-gray-700 mb-3 text-sm">■ 費用（山王・玉津）</p>
+            <div className="space-y-2">
+              <Row label="固定費（かわけん立替）" value={fmt(data.jointFixedExp)} />
+              <Row label="外部清掃費・交通費" value={fmt(data.externalCleaningFee)} />
+              <Row label="変動費（かわけん）" value={fmt(data.kawakVarExp)} />
+              <Row label="変動費（りょうこ）" value={fmt(data.ryokoVarExp)} />
+              <Row label="清掃報酬（かわけん）" value={fmt(data.kawakCleaningFee)} />
+              <Row label="清掃報酬（りょうこ）" value={fmt(data.ryokoCleaningFee)} />
+              <div className="border-t pt-2 mt-1">
+                <Row label="全費用合計" value={fmt(data.totalExpenses)} bold />
+              </div>
+            </div>
+          </Card>
+
+          {/* Profit */}
+          <Card className="p-4">
+            <p className="font-bold text-gray-700 mb-3 text-sm">■ 利益</p>
+            <Row label="全利益" value={fmtSigned(data.profit)} bold valueClass={data.profit>=0?'text-green-600':'text-red-500'} />
+            <Row label="各自の取り分" value={fmtSigned(data.eachShare)} />
+          </Card>
+
+          {/* Settlement result - big display */}
+          <div className={`rounded-2xl p-5 ${data.settlementAmount >= 0 ? 'bg-blue-600' : 'bg-purple-600'}`}>
+            <p className="text-white/70 text-xs font-medium mb-2">■ 精算結果</p>
+            {data.settlementAmount === 0 ? (
+              <p className="text-white text-xl font-bold text-center">精算なし（±0）</p>
+            ) : data.settlementAmount > 0 ? (
+              <>
+                <p className="text-white/80 text-sm mb-1">かわけん → りょうこ に振込</p>
+                <p className="text-white text-3xl font-bold">{fmt(data.settlementAmount)}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-white/80 text-sm mb-1">りょうこ → かわけん に振込</p>
+                <p className="text-white text-3xl font-bold">{fmt(Math.abs(data.settlementAmount))}</p>
+              </>
+            )}
+          </div>
+
+          {/* External staff payments */}
+          {Object.keys(data.staffPayments).length > 0 && (
+            <Card className="p-4">
+              <p className="font-bold text-gray-700 mb-3 text-sm">■ スタッフ支払い明細</p>
+              <div className="space-y-3">
+                {Object.values(data.staffPayments).map((sp, i) => (
+                  <div key={i} className="flex items-start justify-between">
+                    <div>
+                      <p className="font-medium text-gray-800 text-sm">{sp.name}</p>
+                      <p className="text-xs text-gray-500">清掃{sp.count}回 / {fmt(sp.cleaning)} + 交通費{fmt(sp.transport)}</p>
+                    </div>
+                    <p className="font-bold text-gray-800">{fmt(sp.cleaning + sp.transport)}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Tachibana solo */}
+          <Card className="p-4 border-orange-100">
+            <p className="font-bold text-orange-700 mb-3 text-sm">■ 橘（かわけん単独）</p>
+            <div className="space-y-1">
+              <Row label="売上" value={fmt(data.tachibana.revenue)} />
+              <Row label="固定費" value={fmt(data.tachibana.fixedExp)} />
+              <Row label="清掃費" value={fmt(data.tachibana.cleaningFee)} />
+              <Row label="変動費" value={fmt(data.tachibana.varExp)} />
+              <div className="border-t pt-1 mt-1">
+                <Row label="純利益" value={fmtSigned(data.tachibana.profit)} bold valueClass={data.tachibana.profit>=0?'text-green-600':'text-red-500'} />
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({ label, value, sub, bold, valueClass='' }) {
+  return (
+    <div className="flex items-start justify-between py-0.5">
+      <div>
+        <span className={`text-sm ${bold?'font-bold text-gray-800':'text-gray-600'}`}>{label}</span>
+        {sub && <span className="text-xs text-gray-400 ml-1">({sub})</span>}
+      </div>
+      <span className={`text-sm ${bold?'font-bold':'font-medium'} ${valueClass||'text-gray-800'}`}>{value}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// REPORTS PAGE
+// ============================================================
+function ReportsPage() {
+  const [selYear, setSelYear] = useState(today().year);
+  const [tab, setTab] = useState('trend');
+  const tabs = [
+    { id:'trend', label:'推移' },
+    { id:'expense', label:'費用内訳' },
+    { id:'staff', label:'スタッフ' },
+  ];
+
+  return (
+    <div className="pb-24">
+      <div className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-10">
+        <div className="flex items-center justify-center mb-3">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSelYear(y=>y-1)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600">‹</button>
+            <span className="font-semibold text-gray-800 min-w-[60px] text-center">{selYear}年</span>
+            <button onClick={() => setSelYear(y=>y+1)} disabled={selYear>=today().year} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 disabled:opacity-30">›</button>
+          </div>
+        </div>
+        <div className="flex">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${tab===t.id?'border-blue-500 text-blue-600':'border-transparent text-gray-500'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="p-4">
+        {tab==='trend' && <TrendChart year={selYear} />}
+        {tab==='expense' && <ExpenseBreakdownChart year={selYear} />}
+        {tab==='staff' && <StaffReport year={selYear} />}
+      </div>
+    </div>
+  );
+}
+
+function TrendChart({ year }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+  const [yearData, setYearData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const sb = getSupabase();
+      const [{ data: props }, { data: revenues }, { data: fixedExps }, { data: varExps }] = await Promise.all([
+        sb.from('properties').select('*'),
+        sb.from('monthly_revenue').select('*').eq('year', year),
+        sb.from('monthly_fixed_expenses').select('*').eq('year', year),
+        sb.from('monthly_variable_expenses').select('*').eq('year', year),
+      ]);
+      const jointProps = (props||[]).filter(p=>p.include_settlement);
+      const monthly = Array.from({length:12},(_,i)=>{
+        const m = i+1;
+        const rev = (revenues||[]).filter(r=>r.month===m&&jointProps.some(p=>p.id===r.property_id)).reduce((s,r)=>s+r.amount,0);
+        const exp = (fixedExps||[]).filter(e=>e.month===m&&jointProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0)
+          + (varExps||[]).filter(e=>e.month===m&&jointProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0);
+        return { month:m, revenue:rev, expense:exp, profit:rev-exp };
+      });
+      setYearData(monthly);
+      setLoading(false);
+    }
+    load();
+  }, [year]);
+
+  useEffect(() => {
+    if (loading || !canvasRef.current) return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'line',
+      data: {
+        labels: MONTHS_JP,
+        datasets: [
+          { label:'売上', data: yearData.map(d=>d.revenue), borderColor:'#4f6ef7', backgroundColor:'rgba(79,110,247,0.1)', fill:true, tension:0.3, pointRadius:4 },
+          { label:'費用', data: yearData.map(d=>d.expense), borderColor:'#f97316', backgroundColor:'rgba(249,115,22,0.1)', fill:true, tension:0.3, pointRadius:4 },
+          { label:'利益', data: yearData.map(d=>d.profit), borderColor:'#22c55e', backgroundColor:'rgba(34,197,94,0.1)', fill:true, tension:0.3, pointRadius:4 },
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, padding:12 } } },
+        scales:{
+          y:{ beginAtZero:true, ticks:{ callback:v=>v>=10000?Math.floor(v/10000)+'万':'¥'+v.toLocaleString(), font:{size:10} } },
+          x:{ ticks:{ font:{size:10} } }
+        }
+      }
+    });
+    return () => { if(chartRef.current) chartRef.current.destroy(); };
+  }, [yearData, loading]);
+
+  const totals = yearData.reduce((acc,d) => ({ revenue:acc.revenue+d.revenue, expense:acc.expense+d.expense, profit:acc.profit+d.profit }), {revenue:0,expense:0,profit:0});
+
+  return (
+    <div>
+      <SectionTitle>月別 売上・費用・利益推移（山王・玉津）</SectionTitle>
+      {loading ? <Spinner /> : (
+        <>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            {[['売上',totals.revenue,'text-blue-600'],['費用',totals.expense,'text-orange-600'],['利益',totals.profit,'text-green-600']].map(([l,v,c])=>(
+              <Card key={l} className="p-3 text-center">
+                <p className="text-xs text-gray-500">{l}</p>
+                <p className={`text-sm font-bold ${c} mt-0.5`}>{fmt(v)}</p>
+              </Card>
+            ))}
+          </div>
+          <Card className="p-4">
+            <div className="chart-container"><canvas ref={canvasRef}></canvas></div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ExpenseBreakdownChart({ year }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+  const [yearData, setYearData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const sb = getSupabase();
+      const [{ data: props }, { data: fixedExps }, { data: varExps }] = await Promise.all([
+        sb.from('properties').select('*'),
+        sb.from('monthly_fixed_expenses').select('*').eq('year', year),
+        sb.from('monthly_variable_expenses').select('*').eq('year', year),
+      ]);
+      const jointProps = (props||[]).filter(p=>p.include_settlement);
+      const monthly = Array.from({length:12},(_,i)=>{
+        const m = i+1;
+        const fixed = (fixedExps||[]).filter(e=>e.month===m&&jointProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0);
+        const variable = (varExps||[]).filter(e=>e.month===m&&jointProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0);
+        return { month:m, fixed, variable };
+      });
+      setYearData(monthly);
+      setLoading(false);
+    }
+    load();
+  }, [year]);
+
+  useEffect(() => {
+    if (loading || !canvasRef.current) return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'bar',
+      data: {
+        labels: MONTHS_JP,
+        datasets: [
+          { label:'固定費', data: yearData.map(d=>d.fixed), backgroundColor:'rgba(79,110,247,0.8)', stack:'s' },
+          { label:'変動費', data: yearData.map(d=>d.variable), backgroundColor:'rgba(249,115,22,0.8)', stack:'s' },
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ position:'bottom', labels:{ font:{size:11} } } },
+        scales:{
+          y:{ stacked:true, beginAtZero:true, ticks:{ callback:v=>v>=10000?Math.floor(v/10000)+'万':'¥'+v, font:{size:10} } },
+          x:{ stacked:true, ticks:{ font:{size:10} } }
+        }
+      }
+    });
+    return () => { if(chartRef.current) chartRef.current.destroy(); };
+  }, [yearData, loading]);
+
+  return (
+    <div>
+      <SectionTitle>月別 費用内訳（山王・玉津）</SectionTitle>
+      {loading ? <Spinner /> : (
+        <Card className="p-4">
+          <div className="chart-container"><canvas ref={canvasRef}></canvas></div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function StaffReport({ year }) {
+  const { data: staffList } = useData('staff', '*');
+  const [report, setReport] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const sb = getSupabase();
+      const from = `${year}-01-01`, to = `${year}-12-31`;
+      const { data: shifts } = await sb.from('cleaning_shifts').select('*').gte('date', from).lte('date', to).eq('status','completed');
+      const ids = (shifts||[]).map(s=>s.id);
+      let shiftStaff = [];
+      if (ids.length > 0) {
+        const { data: ss } = await sb.from('cleaning_shift_staff').select('*').in('shift_id', ids);
+        shiftStaff = ss||[];
+      }
+      const byStaff = {};
+      for (const ss of shiftStaff) {
+        if (!byStaff[ss.staff_id]) byStaff[ss.staff_id] = { count:0, cleaning:0, transport:0, byMonth:Array(12).fill(0) };
+        byStaff[ss.staff_id].count++;
+        byStaff[ss.staff_id].cleaning += ss.cleaning_fee||0;
+        byStaff[ss.staff_id].transport += ss.transport_fee||0;
+        const sh = shifts.find(x=>x.id===ss.shift_id);
+        if (sh) { const m = new Date(sh.date).getMonth(); byStaff[ss.staff_id].byMonth[m]++; }
+      }
+      setReport(byStaff);
+      setLoading(false);
+    }
+    load();
+  }, [year]);
+
+  return (
+    <div>
+      <SectionTitle>スタッフ別 年間集計</SectionTitle>
+      {loading ? <Spinner /> : (
+        Object.keys(report).length === 0 ? (
+          <div className="text-center py-8 text-gray-400"><p>データがありません</p></div>
+        ) : (
+          <div className="space-y-3">
+            {Object.entries(report).map(([sid, d]) => {
+              const s = staffList.find(x=>x.id===sid);
+              return (
+                <Card key={sid} className="p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="font-bold text-gray-800">{s?.name||'不明'}</p>
+                      <p className="text-xs text-gray-500">年間 {d.count}回</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-gray-800">{fmt(d.cleaning+d.transport)}</p>
+                      <p className="text-xs text-gray-500">清掃{fmt(d.cleaning)} + 交通費{fmt(d.transport)}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-12 gap-0.5 mt-2">
+                    {d.byMonth.map((cnt, i) => (
+                      <div key={i} className="text-center">
+                        <div className={`h-6 rounded-sm flex items-end justify-center text-[9px] ${cnt>0?'bg-blue-500 text-white':'bg-gray-100 text-gray-400'}`}>
+                          {cnt>0?cnt:''}
+                        </div>
+                        <div className="text-[9px] text-gray-400 mt-0.5">{i+1}</div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// BOTTOM NAVIGATION
+// ============================================================
+function BottomNav({ page, setPage }) {
+  const items = [
+    { id:'summary', icon:'💰', label:'精算' },
+    { id:'shifts', icon:'📋', label:'シフト' },
+    { id:'finance', icon:'📊', label:'収支' },
+    { id:'reports', icon:'📈', label:'レポート' },
+    { id:'settings', icon:'⚙️', label:'設定' },
+  ];
+  return (
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-bottom z-20">
+      <div className="flex">
+        {items.map(item => (
+          <button key={item.id} onClick={() => setPage(item.id)}
+            className={`flex-1 flex flex-col items-center py-2 gap-0.5 transition-colors ${page===item.id?'text-blue-600':'text-gray-400'}`}>
+            <span className="text-xl leading-none">{item.icon}</span>
+            <span className="text-[10px] font-medium">{item.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// PAGE HEADER
+// ============================================================
+function PageHeader({ page }) {
+  const titles = {
+    summary: '精算サマリー',
+    shifts: 'シフト管理',
+    finance: '収支入力',
+    reports: 'レポート',
+    settings: '設定',
+  };
+  return (
+    <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+      <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
+        <span className="text-white text-sm font-bold">民</span>
+      </div>
+      <h1 className="font-bold text-gray-800">{titles[page]||''}</h1>
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function MainApp() {
+  const [page, setPage] = useState('summary');
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <PageHeader page={page} />
+      <div className="slide-in">
+        {page === 'summary' && <SummaryPage />}
+        {page === 'shifts' && <ShiftsPage />}
+        {page === 'finance' && <FinancePage />}
+        {page === 'reports' && <ReportsPage />}
+        {page === 'settings' && <SettingsPage />}
+      </div>
+      <BottomNav page={page} setPage={setPage} />
+    </div>
+  );
+}
+
+// ============================================================
+// ROOT APP
+// ============================================================
+function App() {
+  const [configured, setConfigured] = useState(!!getConfig());
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    async function checkSession() {
+      if (!configured) { setChecking(false); return; }
+      try {
+        const sb = getSupabase();
+        const { data: { session } } = await sb.auth.getSession();
+        setLoggedIn(!!session);
+      } catch(e) { console.error(e); }
+      finally { setChecking(false); }
+    }
+    checkSession();
+  }, [configured]);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-3">🏠</div>
+          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" style={{borderWidth:'3px'}}></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!configured) {
+    return <SetupScreen onSetup={() => { supabaseClient = null; setConfigured(true); setChecking(true); }} />;
+  }
+
+  if (!loggedIn) {
+    return <LoginScreen onLogin={() => setLoggedIn(true)} />;
+  }
+
+  return <MainApp />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script>
+  // Manually run Babel on text/babel scripts after all dependencies load
+  window.addEventListener('load', function() {
+    if (document.getElementById('root').innerHTML === '') {
+      var scripts = document.querySelectorAll('script[type="text/babel"]');
+      scripts.forEach(function(s) {
+        try {
+          var result = Babel.transform(s.textContent, { presets: [['react', { runtime: 'classic' }]] });
+          var fn = new Function(result.code);
+          fn();
+        } catch(e) { console.error('Babel execution error:', e); }
+      });
+    }
+  });
+</script>
+</body>
+</html>
