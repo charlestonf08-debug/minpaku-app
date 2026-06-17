@@ -54,22 +54,18 @@ const MONTHS_JP = ['1月','2月','3月','4月','5月','6月','7月','8月','9月
 // ============================================================
 // SUPABASE SETUP
 // ============================================================
+const SUPABASE_URL = 'https://fboitvepwmlckkuwrova.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_OGjYn5sX9x6GhUHJUhBuzw_a1mGDzpz';
+
+// Legacy localStorage support (ignored now that credentials are hardcoded)
 const CONFIG_KEY = 'minpaku_supabase_config';
-
-function getConfig() {
-  try { return JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null'); } catch { return null; }
-}
-
-function saveConfig(url, key) {
-  localStorage.setItem(CONFIG_KEY, JSON.stringify({ url, key }));
-}
+function getConfig() { return { url: SUPABASE_URL, key: SUPABASE_KEY }; }
+function saveConfig() {}
 
 let supabaseClient = null;
 function getSupabase() {
   if (supabaseClient) return supabaseClient;
-  const cfg = getConfig();
-  if (!cfg) return null;
-  supabaseClient = supabase.createClient(cfg.url, cfg.key);
+  supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   return supabaseClient;
 }
 
