@@ -14,16 +14,30 @@
       theme: {
         extend: {
           colors: {
-            primary: { DEFAULT: '#4f6ef7', dark: '#3a56d4' },
-            accent: '#f97316',
+            primary: { DEFAULT: '#4ec9c9', dark: '#36b0b0', light: '#e0f7f7' },
+            accent:  { DEFAULT: '#f5a623', dark: '#e0921a', light: '#fff3e0' },
+            cream:   { DEFAULT: '#fdf3e7', dark: '#f0e2cf' },
+            sanno:   '#ffefda',
+            tamatsu: '#9aeaed',
+            tachibana: '#d1c8ba',
           }
         }
       }
     }
   </script>
   <style>
+    :root {
+      --color-primary: #4ec9c9;
+      --color-primary-dark: #36b0b0;
+      --color-accent: #f5a623;
+      --color-cream: #fdf3e7;
+      --color-cream-dark: #f0e2cf;
+      --color-sanno: #ffefda;
+      --color-tamatsu: #9aeaed;
+      --color-tachibana: #d1c8ba;
+    }
     * { -webkit-tap-highlight-color: transparent; }
-    body { font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; }
+    body { font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; background-color: var(--color-cream); }
     .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
     input[type="number"] { -moz-appearance: textfield; }
     input[type="number"]::-webkit-inner-spin-button,
@@ -33,10 +47,20 @@
     .chart-container { position: relative; height: 240px; }
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb { background: var(--color-primary); border-radius: 2px; }
+    .prop-sanno    { background-color: var(--color-sanno);    color: #7a5c2e; }
+    .prop-tamatsu  { background-color: var(--color-tamatsu);  color: #1a6e71; }
+    .prop-tachibana{ background-color: var(--color-tachibana); color: #5c4f44; }
+    .btn-primary   { background-color: var(--color-primary);  color: #fff; }
+    .btn-primary:hover { background-color: var(--color-primary-dark); }
+    .btn-accent    { background-color: var(--color-accent);   color: #fff; }
+    .tab-active    { border-color: var(--color-primary) !important; color: var(--color-primary) !important; }
+    .text-primary  { color: var(--color-primary); }
+    .bg-primary    { background-color: var(--color-primary); }
+    .border-primary{ border-color: var(--color-primary); }
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="min-h-screen" style="background-color:#fdf3e7">
 <div id="root"></div>
 
 <script type="text/babel">
@@ -142,17 +166,17 @@ function SetupScreen({ onSetup }) {
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Supabase URL</label>
-            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="https://xxx.supabase.co" value={url} onChange={e => setUrl(e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Anon Key</label>
-            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="eyJhbGci..." value={key} onChange={e => setKey(e.target.value)} type="password" />
           </div>
           {err && <p className="text-red-500 text-sm">{err}</p>}
           <button type="submit" disabled={loading}
-            className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            className="w-full bg-primary text-white rounded-lg py-3 font-medium hover:bg-primary-dark disabled:opacity-50 transition-colors">
             {loading ? '接続中...' : '接続して開始'}
           </button>
         </form>
@@ -195,17 +219,17 @@ function LoginScreen({ onLogin }) {
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">メールアドレス</label>
-            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               type="email" placeholder="mail@example.com" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">パスワード</label>
-            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               type="password" value={pw} onChange={e => setPw(e.target.value)} />
           </div>
           {err && <p className="text-red-500 text-sm">{err}</p>}
           <button type="submit" disabled={loading}
-            className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            className="w-full bg-primary text-white rounded-lg py-3 font-medium hover:bg-primary-dark disabled:opacity-50 transition-colors">
             {loading ? 'ログイン中...' : 'ログイン'}
           </button>
         </form>
@@ -247,7 +271,7 @@ function MonthPicker({ year, month, onChange }) {
 }
 
 function Badge({ text, color='gray' }) {
-  const colors = { gray:'bg-gray-100 text-gray-600', blue:'bg-blue-100 text-blue-700', green:'bg-green-100 text-green-700', orange:'bg-orange-100 text-orange-700', red:'bg-red-100 text-red-700', purple:'bg-purple-100 text-purple-700' };
+  const colors = { gray:'bg-gray-100 text-gray-600', blue:'bg-primary/20 text-primary-dark', green:'bg-green-100 text-green-700', orange:'bg-orange-100 text-orange-700', red:'bg-red-100 text-red-700', purple:'bg-purple-100 text-purple-700', sanno:'prop-sanno', tamatsu:'prop-tamatsu', tachibana:'prop-tachibana' };
   return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors[color]||colors.gray}`}>{text}</span>;
 }
 
@@ -268,7 +292,7 @@ function Modal({ show, onClose, title, children }) {
 }
 
 function Spinner() {
-  return <div className="flex items-center justify-center py-12"><div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" style={{borderWidth:'3px'}}></div></div>;
+  return <div className="flex items-center justify-center py-12"><div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" style={{borderWidth:'3px'}}></div></div>;
 }
 
 function AmountInput({ label, value, onChange, placeholder='0' }) {
@@ -279,7 +303,7 @@ function AmountInput({ label, value, onChange, placeholder='0' }) {
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">¥</span>
         <input type="number" min="0" value={value||''} onChange={e => onChange(Number(e.target.value)||0)}
           placeholder={placeholder}
-          className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
       </div>
     </div>
   );
@@ -323,7 +347,7 @@ function SettingsPage() {
         <div className="flex">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${tab===t.id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'}`}>
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${tab===t.id ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>
               {t.label}
             </button>
           ))}
@@ -382,14 +406,14 @@ function StaffSettings() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <SectionTitle>スタッフ管理</SectionTitle>
-        <button onClick={openAdd} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium">+ 追加</button>
+        <button onClick={openAdd} className="bg-primary text-white px-4 py-1.5 rounded-lg text-sm font-medium">+ 追加</button>
       </div>
       {loading ? <Spinner /> : (
         <div className="space-y-2">
           {sorted.map(s => (
             <Card key={s.id} className="p-3 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${s.type==='kawaken'?'bg-blue-100 text-blue-700':s.type==='ryoko'?'bg-purple-100 text-purple-700':'bg-gray-100 text-gray-600'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${s.type==='kawaken'?'bg-primary/15 text-primary':s.type==='ryoko'?'bg-purple-100 text-purple-700':'bg-gray-100 text-gray-600'}`}>
                   {s.name[0]}
                 </div>
                 <div>
@@ -401,7 +425,7 @@ function StaffSettings() {
                 {!s.active && <Badge text="無効" color="red" />}
                 {s.type === 'external' && (
                   <>
-                    <button onClick={() => openEdit(s)} className="text-xs text-blue-600 px-2 py-1 border border-blue-200 rounded-lg">編集</button>
+                    <button onClick={() => openEdit(s)} className="text-xs text-primary px-2 py-1 border border-primary/30 rounded-lg">編集</button>
                     <button onClick={() => toggleActive(s)} className={`text-xs px-2 py-1 border rounded-lg ${s.active ? 'text-red-500 border-red-200' : 'text-green-600 border-green-200'}`}>
                       {s.active ? '無効化' : '有効化'}
                     </button>
@@ -416,12 +440,12 @@ function StaffSettings() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">名前</label>
-            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="例：田中さん" value={name} onChange={e => setName(e.target.value)} autoFocus />
           </div>
           {err && <p className="text-red-500 text-sm">{err}</p>}
           <button onClick={save} disabled={saving}
-            className="w-full bg-blue-600 text-white rounded-lg py-2.5 font-medium disabled:opacity-50">
+            className="w-full bg-primary text-white rounded-lg py-2.5 font-medium disabled:opacity-50">
             {saving ? '保存中...' : '保存'}
           </button>
         </div>
@@ -479,10 +503,10 @@ function TransportFeeSettings() {
                   <div className="relative flex-1 max-w-[160px]">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">¥</span>
                     <input type="number" min="0" defaultValue={getFee(s.id, p.id)}
-                      className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       onBlur={e => setFee(s.id, p.id, Number(e.target.value)||0)} />
                   </div>
-                  {saving[key] && <span className="text-xs text-blue-500">保存中</span>}
+                  {saving[key] && <span className="text-xs text-primary">保存中</span>}
                 </div>
               );
             })}
@@ -641,7 +665,7 @@ function ShiftsPage() {
     });
   }, [enrichedShifts, filterProp, filterStaff]);
 
-  const propColor = (name) => ({ '山王':'blue', '玉津':'purple', '橘':'orange' }[name] || 'gray');
+  const propColor = (name) => ({ '山王':'sanno', '玉津':'tamatsu', '橘':'tachibana' }[name] || 'gray');
 
   async function completeShift(sh) {
     if (!confirm(`「${sh.prop?.name} ${sh.date}」を完了にしますか？\n費用が自動計算されます。`)) return;
@@ -677,8 +701,8 @@ function ShiftsPage() {
         <div className="flex items-center justify-between mb-3">
           <MonthPicker year={selYear} month={selMonth} onChange={(y,m)=>{setSelYear(y);setSelMonth(m);}} />
           <div className="flex gap-1">
-            <button onClick={() => setViewMode('list')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode==='list'?'bg-blue-600 text-white':'bg-gray-100 text-gray-600'}`}>リスト</button>
-            <button onClick={() => setViewMode('calendar')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode==='calendar'?'bg-blue-600 text-white':'bg-gray-100 text-gray-600'}`}>カレンダー</button>
+            <button onClick={() => setViewMode('list')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode==='list'?'bg-primary text-white':'bg-gray-100 text-gray-600'}`}>リスト</button>
+            <button onClick={() => setViewMode('calendar')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode==='calendar'?'bg-primary text-white':'bg-gray-100 text-gray-600'}`}>カレンダー</button>
           </div>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
@@ -705,9 +729,9 @@ function ShiftsPage() {
 
       <div className="fixed bottom-20 right-4 flex flex-col gap-2">
         <button onClick={() => { setEditShift(null); setShowAdd(true); }}
-          className="bg-blue-600 text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl hover:bg-blue-700">+</button>
+          className="bg-primary text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl hover:bg-primary-dark">+</button>
         <button onClick={() => setShowBulk(true)}
-          className="bg-indigo-500 text-white w-12 h-12 rounded-full shadow-md flex items-center justify-center text-lg hover:bg-indigo-600 self-end" title="一括登録">≡</button>
+          className="bg-accent text-white w-12 h-12 rounded-full shadow-md flex items-center justify-center text-lg hover:bg-accent-dark self-end" title="一括登録">≡</button>
       </div>
 
       {showAdd && (
@@ -776,7 +800,7 @@ function ShiftCalendar({ year, month, shifts, properties }) {
   const firstDow = dayOfWeek(year, month, 1);
   const cells = [...Array(firstDow).fill(null), ...Array.from({length:days},(_,i)=>i+1)];
   const weekDays = ['日','月','火','水','木','金','土'];
-  const propColors = { '山王':'bg-blue-100 text-blue-700', '玉津':'bg-purple-100 text-purple-700', '橘':'bg-orange-100 text-orange-700' };
+  const propColors = { '山王':'prop-sanno', '玉津':'prop-tamatsu', '橘':'prop-tachibana' };
 
   function getShiftsForDay(d) {
     if (!d) return [];
@@ -788,7 +812,7 @@ function ShiftCalendar({ year, month, shifts, properties }) {
     <div>
       <div className="grid grid-cols-7 mb-1">
         {weekDays.map((d,i) => (
-          <div key={i} className={`text-center text-xs font-medium py-1 ${i===0?'text-red-500':i===6?'text-blue-500':'text-gray-400'}`}>{d}</div>
+          <div key={i} className={`text-center text-xs font-medium py-1 ${i===0?'text-red-500':i===6?'text-primary':'text-gray-400'}`}>{d}</div>
         ))}
       </div>
       <div className="grid grid-cols-7 gap-0.5">
@@ -799,7 +823,7 @@ function ShiftCalendar({ year, month, shifts, properties }) {
             <div key={i} className={`min-h-[56px] rounded-lg p-1 ${d ? 'bg-white border border-gray-100' : ''}`}>
               {d && (
                 <>
-                  <p className={`text-xs font-medium mb-0.5 ${dow===0?'text-red-500':dow===6?'text-blue-500':'text-gray-700'}`}>{d}</p>
+                  <p className={`text-xs font-medium mb-0.5 ${dow===0?'text-red-500':dow===6?'text-primary':'text-gray-700'}`}>{d}</p>
                   {dayShifts.map(sh => (
                     <div key={sh.id} className={`text-xs px-1 py-0.5 rounded mb-0.5 truncate ${propColors[sh.prop?.name]||'bg-gray-100 text-gray-600'}`}>
                       {sh.prop?.name}
@@ -867,14 +891,14 @@ function ShiftForm({ properties, staff, editShift, year, month, onClose, onSaved
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">日付</label>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">物件</label>
           <div className="flex gap-2 flex-wrap">
             {sortedProps.map(p => (
               <button key={p.id} onClick={() => setPropId(p.id)}
-                className={`px-4 py-2 rounded-lg text-sm border font-medium transition-colors ${propId===p.id?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                className={`px-4 py-2 rounded-lg text-sm border font-medium transition-colors ${propId===p.id?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
                 {p.name}
               </button>
             ))}
@@ -885,7 +909,7 @@ function ShiftForm({ properties, staff, editShift, year, month, onClose, onSaved
           <div className="flex gap-2 flex-wrap">
             {staff.map(s => (
               <button key={s.id} onClick={() => toggleStaff(s.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${selStaff.includes(s.id)?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${selStaff.includes(s.id)?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
                 {s.name}
               </button>
             ))}
@@ -898,12 +922,12 @@ function ShiftForm({ properties, staff, editShift, year, month, onClose, onSaved
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">メモ（任意）</label>
-          <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             value={notes} onChange={e=>setNotes(e.target.value)} placeholder="備考など" />
         </div>
         {err && <p className="text-red-500 text-sm">{err}</p>}
         <button onClick={save} disabled={saving}
-          className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium disabled:opacity-50">
+          className="w-full bg-primary text-white rounded-lg py-3 font-medium disabled:opacity-50">
           {saving ? '保存中...' : '保存'}
         </button>
       </div>
@@ -958,7 +982,7 @@ function BulkShiftForm({ properties, staff, year, month, onClose, onSaved }) {
           <div className="flex gap-2 flex-wrap">
             {sortedProps.map(p => (
               <button key={p.id} onClick={() => setPropId(p.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm border ${propId===p.id?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                className={`px-3 py-1.5 rounded-lg text-sm border ${propId===p.id?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
                 {p.name}
               </button>
             ))}
@@ -974,11 +998,11 @@ function BulkShiftForm({ properties, staff, year, month, onClose, onSaved }) {
                 )}
               </div>
               <input type="date" value={entry.date} onChange={e=>updateEntry(i,'date',e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-primary" />
               <div className="flex flex-wrap gap-1.5">
                 {staff.map(s => (
                   <button key={s.id} onClick={() => toggleEntryStaff(i, s.id)}
-                    className={`px-2.5 py-1 rounded-lg text-xs border ${entry.staffIds.includes(s.id)?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                    className={`px-2.5 py-1 rounded-lg text-xs border ${entry.staffIds.includes(s.id)?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
                     {s.name}
                   </button>
                 ))}
@@ -991,7 +1015,7 @@ function BulkShiftForm({ properties, staff, year, month, onClose, onSaved }) {
         </button>
         {err && <p className="text-red-500 text-sm">{err}</p>}
         <button onClick={save} disabled={saving}
-          className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium disabled:opacity-50">
+          className="w-full bg-primary text-white rounded-lg py-3 font-medium disabled:opacity-50">
           {saving ? '登録中...' : `${entries.filter(e=>e.date&&e.staffIds.length>0).length}件を一括登録`}
         </button>
       </div>
@@ -1022,7 +1046,7 @@ function FinancePage() {
         <div className="flex">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${tab===t.id?'border-blue-500 text-blue-600':'border-transparent text-gray-500'}`}>
+              className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${tab===t.id?'border-primary text-primary':'border-transparent text-gray-500'}`}>
               {t.label}
             </button>
           ))}
@@ -1083,7 +1107,7 @@ function RevenueSection({ year, month }) {
                 <p className="font-medium text-gray-800">{p.name}</p>
                 <p className="text-xs text-gray-500">{ownerLabel[p.revenue_owner]}</p>
               </div>
-              {saving[p.id] && <span className="text-xs text-blue-500">保存中...</span>}
+              {saving[p.id] && <span className="text-xs text-primary">保存中...</span>}
             </div>
             <AmountInput
               value={revenues[p.id]||0}
@@ -1161,7 +1185,7 @@ function FixedExpenseSection({ year, month }) {
                       }}
                     />
                   </div>
-                  {saving[`${p.id}-${cat}`] && <span className="text-xs text-blue-500 flex-shrink-0">保存</span>}
+                  {saving[`${p.id}-${cat}`] && <span className="text-xs text-primary flex-shrink-0">保存</span>}
                 </div>
               ))}
               <div className="border-t pt-2 text-right">
@@ -1222,7 +1246,7 @@ function VariableExpenseSection({ year, month }) {
       <div className="flex items-center justify-between mb-4">
         <SectionTitle>変動費</SectionTitle>
         <button onClick={() => { setForm({property_id:sortedProps[0]?.id||'', category:'消耗品', amount:0, payer:'kawaken', memo:''}); setShowForm(true); }}
-          className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium">+ 追加</button>
+          className="bg-primary text-white px-4 py-1.5 rounded-lg text-sm font-medium">+ 追加</button>
       </div>
       {loading ? <Spinner /> : (
         items.length === 0 ? (
@@ -1244,7 +1268,7 @@ function VariableExpenseSection({ year, month }) {
               </Card>
             ))}
             <div className="flex justify-between text-sm font-medium text-gray-600 px-1 pt-2">
-              <span>かわけん計: <span className="text-blue-700">{fmt(items.filter(i=>i.payer==='kawaken').reduce((s,i)=>s+i.amount,0))}</span></span>
+              <span>かわけん計: <span className="text-primary">{fmt(items.filter(i=>i.payer==='kawaken').reduce((s,i)=>s+i.amount,0))}</span></span>
               <span>りょうこ計: <span className="text-purple-700">{fmt(items.filter(i=>i.payer==='ryoko').reduce((s,i)=>s+i.amount,0))}</span></span>
             </div>
           </div>
@@ -1257,7 +1281,7 @@ function VariableExpenseSection({ year, month }) {
             <div className="flex gap-2 flex-wrap">
               {sortedProps.map(p => (
                 <button key={p.id} onClick={() => setForm(f=>({...f, property_id:p.id}))}
-                  className={`px-3 py-1.5 rounded-lg text-sm border ${form.property_id===p.id?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                  className={`px-3 py-1.5 rounded-lg text-sm border ${form.property_id===p.id?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
                   {p.name}
                 </button>
               ))}
@@ -1268,7 +1292,7 @@ function VariableExpenseSection({ year, month }) {
             <div className="flex flex-wrap gap-2">
               {VARIABLE_EXPENSE_CATEGORIES.map(c => (
                 <button key={c} onClick={() => setForm(f=>({...f,category:c}))}
-                  className={`px-3 py-1.5 rounded-lg text-sm border ${form.category===c?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                  className={`px-3 py-1.5 rounded-lg text-sm border ${form.category===c?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
                   {c}
                 </button>
               ))}
@@ -1280,7 +1304,7 @@ function VariableExpenseSection({ year, month }) {
             <div className="flex gap-2">
               {[['kawaken','かわけん'],['ryoko','りょうこ']].map(([v,l]) => (
                 <button key={v} onClick={() => setForm(f=>({...f,payer:v}))}
-                  className={`flex-1 py-2 rounded-lg text-sm border ${form.payer===v?'bg-blue-600 text-white border-blue-600':'border-gray-300 text-gray-600'}`}>
+                  className={`flex-1 py-2 rounded-lg text-sm border ${form.payer===v?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
                   {l}
                 </button>
               ))}
@@ -1288,11 +1312,11 @@ function VariableExpenseSection({ year, month }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">メモ（任意）</label>
-            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               value={form.memo} onChange={e=>setForm(f=>({...f,memo:e.target.value}))} />
           </div>
           <button onClick={saveItem} disabled={saving}
-            className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium disabled:opacity-50">
+            className="w-full bg-primary text-white rounded-lg py-3 font-medium disabled:opacity-50">
             {saving ? '保存中...' : '追加'}
           </button>
         </div>
@@ -1364,10 +1388,10 @@ function CleaningExpenseSection({ year, month }) {
                 </Card>
               );
             })}
-            <Card className="p-4 bg-blue-50 border-blue-100">
+            <Card className="p-4 bg-cream-dark border-primary/20">
               <div className="flex justify-between font-bold">
-                <span className="text-blue-800">合計支払額</span>
-                <span className="text-blue-800">{fmt(shiftStaff.reduce((s,x)=>s+(x.total_fee||0),0))}</span>
+                <span className="text-primary">合計支払額</span>
+                <span className="text-primary">{fmt(shiftStaff.reduce((s,x)=>s+(x.total_fee||0),0))}</span>
               </div>
             </Card>
           </div>
@@ -1555,7 +1579,7 @@ function SummaryPage() {
           </Card>
 
           {/* Settlement result - big display */}
-          <div className={`rounded-2xl p-5 ${data.settlementAmount >= 0 ? 'bg-blue-600' : 'bg-purple-600'}`}>
+          <div className={`rounded-2xl p-5 ${data.settlementAmount >= 0 ? 'bg-primary' : 'bg-purple-600'}`}>
             <p className="text-white/70 text-xs font-medium mb-2">■ 精算結果</p>
             {data.settlementAmount === 0 ? (
               <p className="text-white text-xl font-bold text-center">精算なし（±0）</p>
@@ -1583,7 +1607,7 @@ function SummaryPage() {
                     return (o[a.type]??2) - (o[b.type]??2);
                   })
                   .map((sp, i) => {
-                    const typeColor = {kawaken:'text-blue-600',ryoko:'text-purple-600',external:'text-gray-700'};
+                    const typeColor = {kawaken:'text-primary',ryoko:'text-purple-600',external:'text-gray-700'};
                     const total = sp.cleaning + sp.transport;
                     return (
                       <div key={i} className="flex items-start justify-between py-1 border-b border-gray-50 last:border-0">
@@ -1662,7 +1686,7 @@ function ReportsPage() {
         <div className="flex">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${tab===t.id?'border-blue-500 text-blue-600':'border-transparent text-gray-500'}`}>
+              className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${tab===t.id?'border-primary text-primary':'border-transparent text-gray-500'}`}>
               {t.label}
             </button>
           ))}
@@ -1740,7 +1764,7 @@ function TrendChart({ year }) {
       {loading ? <Spinner /> : (
         <>
           <div className="grid grid-cols-3 gap-2 mb-4">
-            {[['売上',totals.revenue,'text-blue-600'],['費用',totals.expense,'text-orange-600'],['利益',totals.profit,'text-green-600']].map(([l,v,c])=>(
+            {[['売上',totals.revenue,'text-primary'],['費用',totals.expense,'text-orange-600'],['利益',totals.profit,'text-green-600']].map(([l,v,c])=>(
               <Card key={l} className="p-3 text-center">
                 <p className="text-xs text-gray-500">{l}</p>
                 <p className={`text-sm font-bold ${c} mt-0.5`}>{fmt(v)}</p>
@@ -1877,7 +1901,7 @@ function StaffReport({ year }) {
                   <div className="grid grid-cols-12 gap-0.5 mt-2">
                     {d.byMonth.map((cnt, i) => (
                       <div key={i} className="text-center">
-                        <div className={`h-6 rounded-sm flex items-end justify-center text-[9px] ${cnt>0?'bg-blue-500 text-white':'bg-gray-100 text-gray-400'}`}>
+                        <div className={`h-6 rounded-sm flex items-end justify-center text-[9px] ${cnt>0?'bg-primary text-white':'bg-gray-100 text-gray-400'}`}>
                           {cnt>0?cnt:''}
                         </div>
                         <div className="text-[9px] text-gray-400 mt-0.5">{i+1}</div>
@@ -1895,26 +1919,84 @@ function StaffReport({ year }) {
 }
 
 // ============================================================
+// SVG ICONS
+// ============================================================
+function IconSummary({ active }) {
+  const c = active ? 'var(--color-primary)' : '#b0b8c1';
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.8"/>
+      <text x="12" y="16" textAnchor="middle" fontSize="11" fontWeight="bold" fill={c}>¥</text>
+    </svg>
+  );
+}
+function IconShifts({ active }) {
+  const c = active ? 'var(--color-primary)' : '#b0b8c1';
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="4" width="18" height="17" rx="2" stroke={c} strokeWidth="1.8"/>
+      <line x1="8" y1="2" x2="8" y2="6" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
+      <line x1="16" y1="2" x2="16" y2="6" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
+      <line x1="3" y1="9" x2="21" y2="9" stroke={c} strokeWidth="1.5"/>
+      <rect x="7" y="13" width="3" height="3" rx="0.5" fill={c}/>
+      <rect x="11" y="13" width="3" height="3" rx="0.5" fill={c}/>
+    </svg>
+  );
+}
+function IconFinance({ active }) {
+  const c = active ? 'var(--color-primary)' : '#b0b8c1';
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <rect x="2" y="14" width="4" height="7" rx="1" fill={c}/>
+      <rect x="8" y="9" width="4" height="12" rx="1" fill={c}/>
+      <rect x="14" y="5" width="4" height="16" rx="1" fill={c}/>
+      <rect x="20" y="2" width="2" height="19" rx="1" fill={c} opacity="0.3"/>
+    </svg>
+  );
+}
+function IconReports({ active }) {
+  const c = active ? 'var(--color-primary)' : '#b0b8c1';
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <polyline points="3,17 8,10 13,14 20,5" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <line x1="3" y1="21" x2="21" y2="21" stroke={c} strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  );
+}
+function IconSettings({ active }) {
+  const c = active ? 'var(--color-primary)' : '#b0b8c1';
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="3" stroke={c} strokeWidth="1.8"/>
+      <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// ============================================================
 // BOTTOM NAVIGATION
 // ============================================================
 function BottomNav({ page, setPage }) {
   const items = [
-    { id:'summary', icon:'💰', label:'精算' },
-    { id:'shifts', icon:'📋', label:'シフト' },
-    { id:'finance', icon:'📊', label:'収支' },
-    { id:'reports', icon:'📈', label:'レポート' },
-    { id:'settings', icon:'⚙️', label:'設定' },
+    { id:'summary',  Icon: IconSummary,  label:'精算' },
+    { id:'shifts',   Icon: IconShifts,   label:'シフト' },
+    { id:'finance',  Icon: IconFinance,  label:'収支' },
+    { id:'reports',  Icon: IconReports,  label:'レポート' },
+    { id:'settings', Icon: IconSettings, label:'設定' },
   ];
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-bottom z-20">
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 safe-bottom z-20" style={{boxShadow:'0 -2px 12px rgba(0,0,0,0.06)'}}>
       <div className="flex">
-        {items.map(item => (
-          <button key={item.id} onClick={() => setPage(item.id)}
-            className={`flex-1 flex flex-col items-center py-2 gap-0.5 transition-colors ${page===item.id?'text-blue-600':'text-gray-400'}`}>
-            <span className="text-xl leading-none">{item.icon}</span>
-            <span className="text-[10px] font-medium">{item.label}</span>
-          </button>
-        ))}
+        {items.map(item => {
+          const active = page === item.id;
+          return (
+            <button key={item.id} onClick={() => setPage(item.id)}
+              className="flex-1 flex flex-col items-center py-2.5 gap-0.5 transition-colors">
+              <item.Icon active={active} />
+              <span className="text-[10px] font-semibold" style={{color: active ? 'var(--color-primary)' : '#b0b8c1'}}>{item.label}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -1932,11 +2014,14 @@ function PageHeader({ page }) {
     settings: '設定',
   };
   return (
-    <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-      <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
-        <span className="text-white text-sm font-bold">民</span>
+    <div className="bg-white border-b border-cream-dark px-4 py-3 flex items-center gap-3">
+      <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{background:'var(--color-primary)'}}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path d="M3 9.5L12 3l9 6.5V21H3V9.5z" stroke="white" strokeWidth="2" strokeLinejoin="round"/>
+          <rect x="9" y="14" width="6" height="7" rx="1" fill="white" opacity="0.8"/>
+        </svg>
       </div>
-      <h1 className="font-bold text-gray-800">{titles[page]||''}</h1>
+      <h1 className="font-bold text-gray-800 tracking-wide">{titles[page]||''}</h1>
     </div>
   );
 }
@@ -1988,7 +2073,7 @@ function App() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="text-4xl mb-3">🏠</div>
-          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" style={{borderWidth:'3px'}}></div>
+          <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto" style={{borderWidth:'3px'}}></div>
         </div>
       </div>
     );
