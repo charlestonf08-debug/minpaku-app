@@ -494,6 +494,9 @@ function TransportFeeSettings() {
 }
 
 function SystemSettings() {
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState('');
+
   async function handleLogout() {
     await getSupabase().auth.signOut();
     window.location.reload();
@@ -505,9 +508,66 @@ function SystemSettings() {
       window.location.reload();
     }
   }
+
+  async function seedStaff() {
+    if (!confirm('スタッフ初期データを登録します。既存データは上書きされません。続けますか？')) return;
+    setSeeding(true); setSeedMsg('');
+    try {
+      const sb = getSupabase();
+      // スタッフ追加
+      const newStaff = [
+        { name:'ゆうじ', type:'external', active:true },
+        { name:'みゃく', type:'external', active:true },
+        { name:'ちゃん', type:'external', active:true },
+        { name:'ゆきこ', type:'external', active:true },
+        { name:'もんもん', type:'external', active:true },
+      ];
+      for (const s of newStaff) {
+        const { data: existing } = await sb.from('staff').select('id').eq('name', s.name).maybeSingle();
+        if (!existing) await sb.from('staff').insert(s);
+      }
+      // 全スタッフと物件を取得
+      const { data: allStaff } = await sb.from('staff').select('*');
+      const { data: allProps } = await sb.from('properties').select('*');
+      const findS = n => allStaff?.find(s => s.name === n);
+      const findP = n => allProps?.find(p => p.name === n);
+      // 交通費テーブル（往復）
+      const fees = [
+        ['ゆうじ','橘',1100],['ゆうじ','山王',960],['ゆうじ','玉津',600],
+        ['みゃく','橘',880],['みゃく','山王',480],['みゃく','玉津',480],
+        ['ちゃん','橘',1200],['ちゃん','山王',820],['ちゃん','玉津',980],
+        ['ゆきこ','橘',980],['ゆきこ','山王',880],['ゆきこ','玉津',980],
+        ['りょうこ','橘',580],['りょうこ','山王',480],['りょうこ','玉津',400],
+        ['かわけん','山王',480],['かわけん','玉津',580],
+      ];
+      for (const [sName, pName, amount] of fees) {
+        const s = findS(sName); const p = findP(pName);
+        if (!s || !p) continue;
+        const { data: ex } = await sb.from('staff_transport_fees').select('id').eq('staff_id', s.id).eq('property_id', p.id).maybeSingle();
+        if (ex) {
+          await sb.from('staff_transport_fees').update({ amount }).eq('id', ex.id);
+        } else {
+          await sb.from('staff_transport_fees').insert({ staff_id: s.id, property_id: p.id, amount });
+        }
+      }
+      setSeedMsg('✅ 登録完了！スタッフと交通費を設定しました。');
+    } catch(e) {
+      setSeedMsg('❌ エラー: ' + e.message);
+    } finally { setSeeding(false); }
+  }
+
   return (
     <div className="space-y-3">
       <SectionTitle>システム設定</SectionTitle>
+      <Card className="p-4">
+        <p className="text-sm font-medium text-gray-700 mb-1">スタッフ初期設定</p>
+        <p className="text-xs text-gray-500 mb-3">ゆうじ・みゃく・ちゃん・ゆきこ・もんもんと各交通費を一括登録します</p>
+        {seedMsg && <p className="text-sm mb-3">{seedMsg}</p>}
+        <button onClick={seedStaff} disabled={seeding}
+          className="text-sm text-green-700 border border-green-300 bg-green-50 px-4 py-2 rounded-lg disabled:opacity-50">
+          {seeding ? '登録中...' : '🚀 スタッフ一括登録'}
+        </button>
+      </Card>
       <Card className="p-4">
         <p className="text-sm font-medium text-gray-700 mb-1">Supabase接続</p>
         <p className="text-xs text-gray-500 mb-3">接続済み</p>
@@ -593,9 +653,12 @@ function ShiftsPage() {
     for (const ss of sh.staffList) {
       const tf = (tFees||[]).find(x => x.staff_id === ss.staff_id && x.property_id === sh.property_id);
       const transport = tf ? tf.amount : 0;
-      const total = cleaningFee + transport;
+      // かわけんは橘の清掃費なし（橘はかわけん単独負担のため）
+      const isKawakenAtTachibana = ss.staffType === 'kawaken' && sh.prop?.name === '橘';
+      const fee = isKawakenAtTachibana ? 0 : cleaningFee;
+      const total = fee + transport;
       await sb.from('cleaning_shift_staff').update({
-        cleaning_fee: cleaningFee, transport_fee: transport, total_fee: total
+        cleaning_fee: fee, transport_fee: transport, total_fee: total
       }).eq('id', ss.id);
     }
     await sb.from('cleaning_shifts').update({ status: 'completed' }).eq('id', sh.id);
@@ -1396,12 +1459,13 @@ function SummaryPage() {
       const kawakActual = sannoRev + kawakCleaningFee - jointFixedExp - externalCleaningFee - kawakVarExp;
       const settlementAmount = kawakActual - eachShare;
 
-      // Staff payment summary
+      // Staff payment summary (all staff including かわけん・りょうこ)
+      const typeOrder = { kawaken:0, ryoko:1, external:2 };
       const staffPayments = {};
-      for (const ss of shiftStaff) { // all shifts for staff detail
+      for (const ss of shiftStaff) {
         const st = staffList?.find(x=>x.id===ss.staff_id);
-        if (!st || st.type==='kawaken' || st.type==='ryoko') continue;
-        if (!staffPayments[ss.staff_id]) staffPayments[ss.staff_id] = { name:st.name, count:0, cleaning:0, transport:0 };
+        if (!st) continue;
+        if (!staffPayments[ss.staff_id]) staffPayments[ss.staff_id] = { name:st.name, type:st.type, count:0, cleaning:0, transport:0 };
         staffPayments[ss.staff_id].count++;
         staffPayments[ss.staff_id].cleaning += ss.cleaning_fee||0;
         staffPayments[ss.staff_id].transport += ss.transport_fee||0;
@@ -1508,20 +1572,36 @@ function SummaryPage() {
             )}
           </div>
 
-          {/* External staff payments */}
+          {/* Staff payment summary */}
           {Object.keys(data.staffPayments).length > 0 && (
             <Card className="p-4">
-              <p className="font-bold text-gray-700 mb-3 text-sm">■ スタッフ支払い明細</p>
+              <p className="font-bold text-gray-700 mb-3 text-sm">■ スタッフ支払い明細（{selYear}年{selMonth}月）</p>
               <div className="space-y-3">
-                {Object.values(data.staffPayments).map((sp, i) => (
-                  <div key={i} className="flex items-start justify-between">
-                    <div>
-                      <p className="font-medium text-gray-800 text-sm">{sp.name}</p>
-                      <p className="text-xs text-gray-500">清掃{sp.count}回 / {fmt(sp.cleaning)} + 交通費{fmt(sp.transport)}</p>
-                    </div>
-                    <p className="font-bold text-gray-800">{fmt(sp.cleaning + sp.transport)}</p>
-                  </div>
-                ))}
+                {Object.values(data.staffPayments)
+                  .sort((a,b) => {
+                    const o = {kawaken:0,ryoko:1,external:2};
+                    return (o[a.type]??2) - (o[b.type]??2);
+                  })
+                  .map((sp, i) => {
+                    const typeColor = {kawaken:'text-blue-600',ryoko:'text-purple-600',external:'text-gray-700'};
+                    const total = sp.cleaning + sp.transport;
+                    return (
+                      <div key={i} className="flex items-start justify-between py-1 border-b border-gray-50 last:border-0">
+                        <div>
+                          <p className={`font-medium text-sm ${typeColor[sp.type]||'text-gray-700'}`}>{sp.name}</p>
+                          <p className="text-xs text-gray-400">清掃{sp.count}回 ／ 清掃費{fmt(sp.cleaning)} ＋ 交通費{fmt(sp.transport)}</p>
+                        </div>
+                        <p className="font-bold text-gray-800 text-sm">{fmt(total)}</p>
+                      </div>
+                    );
+                  })
+                }
+                <div className="border-t pt-2 mt-1 flex justify-between">
+                  <span className="text-sm font-bold text-gray-700">合計</span>
+                  <span className="text-sm font-bold text-gray-800">
+                    {fmt(Object.values(data.staffPayments).reduce((s,sp)=>s+sp.cleaning+sp.transport,0))}
+                  </span>
+                </div>
               </div>
             </Card>
           )}
