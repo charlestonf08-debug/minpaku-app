@@ -1893,11 +1893,16 @@ function SummaryPage() {
       const allJointCleaningFee = jointShiftStaff.reduce((s,ss)=>s+(ss.cleaning_fee||0),0);
       const allJointTransportFee = jointShiftStaff.reduce((s,ss)=>s+(ss.transport_fee||0),0);
 
-      const totalExpenses = jointFixedExp + externalCleaningFee + kawakVarExp + ryokoVarExp + kawakCleaningFee + ryokoCleaningFee;
+      // りょうこの橘シフト報酬（かわけん負担・精算に含める）
+      const tachiShiftIds = tachibana ? (shifts||[]).filter(sh=>sh.property_id===tachibana.id).map(sh=>sh.id) : [];
+      const ryokoTachiCleaningFee = shiftStaff.filter(ss=>tachiShiftIds.includes(ss.shift_id) && ss.staff_id===ryokoStaff?.id).reduce((s,ss)=>s+ss.total_fee,0);
+
+      const totalExpenses = jointFixedExp + externalCleaningFee + kawakVarExp + ryokoVarExp + kawakCleaningFee + ryokoCleaningFee + ryokoTachiCleaningFee;
       const profit = totalJointRevenue - totalExpenses;
       const eachShare = Math.floor(profit / 2);
 
-      const kawakActual = sannoRev + kawakCleaningFee - jointFixedExp - externalCleaningFee - kawakVarExp;
+      // kawakActual: かわけんが実際に受け取った・支払った金額（りょうこ橘報酬もかわけん負担）
+      const kawakActual = sannoRev + kawakCleaningFee - jointFixedExp - externalCleaningFee - kawakVarExp - ryokoTachiCleaningFee;
       const settlementAmount = kawakActual - eachShare;
 
       // Staff payment summary (all staff including かわけん・りょうこ)
@@ -1914,13 +1919,13 @@ function SummaryPage() {
 
       // Tachibana summary
       const tachiFixedExp = tachibana ? (fixedExps||[]).filter(e=>e.property_id===tachibana.id).reduce((s,e)=>s+e.amount,0) : 0;
-      const tachiShiftIds = tachibana ? (shifts||[]).filter(sh=>sh.property_id===tachibana.id).map(sh=>sh.id) : [];
       const tachiCleaningFee = shiftStaff.filter(ss=>tachiShiftIds.includes(ss.shift_id)).reduce((s,ss)=>s+ss.total_fee,0);
       const tachiVarExp = tachibana ? (varExps||[]).filter(e=>e.property_id===tachibana.id).reduce((s,e)=>s+e.amount,0) : 0;
 
       setData({
         sannoRev, tamatsuRev, tachiRev, totalJointRevenue,
         jointFixedExp, externalCleaningFee, kawakVarExp, ryokoVarExp, kawakCleaningFee, ryokoCleaningFee,
+        ryokoTachiCleaningFee,
         totalExpenses, profit, eachShare, kawakActual, settlementAmount,
         allJointCleaningFee, allJointTransportFee,
         extJointCleaningFee, extJointTransportFee,
@@ -1982,7 +1987,8 @@ function SummaryPage() {
               <Row label="外部スタッフ清掃費（かわけん立替）" value={fmt(data.extJointCleaningFee)} />
               <Row label="外部スタッフ交通費（かわけん立替）" value={fmt(data.extJointTransportFee)} />
               <Row label="清掃報酬（かわけん）" value={fmt(data.kawakCleaningFee)} />
-              <Row label="清掃報酬（りょうこ）" value={fmt(data.ryokoCleaningFee)} />
+              <Row label="清掃報酬（りょうこ・山王玉津）" value={fmt(data.ryokoCleaningFee)} />
+              <Row label="清掃報酬（りょうこ・橘分）" value={fmt(data.ryokoTachiCleaningFee)} sub="かわけん負担" />
               <Row label="変動費（かわけん）" value={fmt(data.kawakVarExp)} />
               <Row label="変動費（りょうこ）" value={fmt(data.ryokoVarExp)} />
               <div className="border-t pt-2 mt-1">
