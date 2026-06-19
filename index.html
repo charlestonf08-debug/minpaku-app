@@ -1885,6 +1885,10 @@ function SummaryPage() {
         return st?.type==='external';
       }).reduce((s,ss)=>s+ss.total_fee,0);
 
+      // 外部スタッフのみの清掃費・交通費（かわけん立替）
+      const extStaffIds = new Set((staffList||[]).filter(s=>s.type==='external').map(s=>s.id));
+      const extJointCleaningFee = jointShiftStaff.filter(ss=>extStaffIds.has(ss.staff_id)).reduce((s,ss)=>s+(ss.cleaning_fee||0),0);
+      const extJointTransportFee = jointShiftStaff.filter(ss=>extStaffIds.has(ss.staff_id)).reduce((s,ss)=>s+(ss.transport_fee||0),0);
       // 全スタッフ（運営者含む）の清掃費・交通費を合算
       const allJointCleaningFee = jointShiftStaff.reduce((s,ss)=>s+(ss.cleaning_fee||0),0);
       const allJointTransportFee = jointShiftStaff.reduce((s,ss)=>s+(ss.transport_fee||0),0);
@@ -1919,6 +1923,7 @@ function SummaryPage() {
         jointFixedExp, externalCleaningFee, kawakVarExp, ryokoVarExp, kawakCleaningFee, ryokoCleaningFee,
         totalExpenses, profit, eachShare, kawakActual, settlementAmount,
         allJointCleaningFee, allJointTransportFee,
+        extJointCleaningFee, extJointTransportFee,
         staffPayments,
         tachibana: { revenue: tachiRev, fixedExp: tachiFixedExp, cleaningFee: tachiCleaningFee, varExp: tachiVarExp, profit: tachiRev - tachiFixedExp - tachiCleaningFee - tachiVarExp }
       });
@@ -1974,8 +1979,10 @@ function SummaryPage() {
             <p className="font-bold text-gray-700 mb-3 text-sm">■ 費用（山王・玉津）</p>
             <div className="space-y-2">
               <Row label="固定費（かわけん立替）" value={fmt(data.jointFixedExp)} />
-              <Row label="清掃費（全員）" value={fmt(data.allJointCleaningFee)} />
-              <Row label="交通費（全員）" value={fmt(data.allJointTransportFee)} />
+              <Row label="外部スタッフ清掃費（かわけん立替）" value={fmt(data.extJointCleaningFee)} />
+              <Row label="外部スタッフ交通費（かわけん立替）" value={fmt(data.extJointTransportFee)} />
+              <Row label="清掃報酬（かわけん）" value={fmt(data.kawakCleaningFee)} />
+              <Row label="清掃報酬（りょうこ）" value={fmt(data.ryokoCleaningFee)} />
               <Row label="変動費（かわけん）" value={fmt(data.kawakVarExp)} />
               <Row label="変動費（りょうこ）" value={fmt(data.ryokoVarExp)} />
               <div className="border-t pt-2 mt-1">
