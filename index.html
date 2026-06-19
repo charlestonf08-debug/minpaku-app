@@ -271,7 +271,7 @@ function MonthPicker({ year, month, onChange }) {
 }
 
 function Badge({ text, color='gray' }) {
-  const colors = { gray:'bg-gray-100 text-gray-600', blue:'bg-primary/20 text-primary-dark', green:'bg-green-100 text-green-700', orange:'bg-orange-100 text-orange-700', red:'bg-red-100 text-red-700', purple:'bg-purple-100 text-purple-700', sanno:'prop-sanno', tamatsu:'prop-tamatsu', tachibana:'prop-tachibana' };
+  const colors = { gray:'bg-gray-100 text-gray-600', blue:'bg-primary/20 text-primary-dark', green:'bg-green-100 text-green-700', orange:'bg-orange-100 text-orange-700', red:'bg-red-100 text-red-700', purple:'bg-[#FA8072]/20 text-[#c0504d]', sanno:'prop-sanno', tamatsu:'prop-tamatsu', tachibana:'prop-tachibana' };
   return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors[color]||colors.gray}`}>{text}</span>;
 }
 
@@ -340,15 +340,16 @@ function SettingsPage() {
     { id:'staff', label:'スタッフ' },
     { id:'transport', label:'交通費' },
     { id:'recurring', label:'定期費用' },
+    { id:'bonus', label:'臨時払い' },
     { id:'system', label:'システム' },
   ];
   return (
     <div className="pb-24">
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="flex">
+        <div className="flex overflow-x-auto">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-2.5 text-xs font-medium border-b-2 transition-colors ${tab===t.id ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>
+              className={`flex-shrink-0 flex-1 py-2.5 text-xs font-medium border-b-2 transition-colors ${tab===t.id ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>
               {t.label}
             </button>
           ))}
@@ -358,6 +359,7 @@ function SettingsPage() {
         {tab === 'staff' && <StaffSettings />}
         {tab === 'transport' && <TransportFeeSettings />}
         {tab === 'recurring' && <RecurringExpensesSettings />}
+        {tab === 'bonus' && <BonusSettings />}
         {tab === 'system' && <SystemSettings />}
       </div>
     </div>
@@ -415,7 +417,7 @@ function StaffSettings() {
           {sorted.map(s => (
             <Card key={s.id} className="p-3 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${s.type==='kawaken'?'bg-primary/15 text-primary':s.type==='ryoko'?'bg-purple-100 text-purple-700':'bg-gray-100 text-gray-600'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${s.type==='kawaken'?'bg-primary/15 text-primary':s.type==='ryoko'?'bg-[#FA8072]/20 text-[#c0504d]':'bg-gray-100 text-gray-600'}`}>
                   {s.name[0]}
                 </div>
                 <div>
@@ -631,6 +633,103 @@ function RecurringExpensesSettings() {
       ) : (
         <button onClick={() => setShowAdd(true)} className="w-full border-2 border-dashed border-gray-200 rounded-xl py-3 text-sm text-gray-400 hover:border-primary/40 hover:text-primary transition-colors">
           ＋ 定期費用を追加
+        </button>
+      )}
+    </div>
+  );
+}
+
+function BonusSettings() {
+  const { data: staffList } = useData('staff', '*');
+  const [bonuses, setBonuses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [form, setForm] = useState({ staff_id:'', amount:'', date: new Date().toISOString().slice(0,10), note:'' });
+
+  const activeStaff = useMemo(() => (staffList||[]).filter(s=>s.active).sort((a,b)=>{
+    const o={kawaken:0,ryoko:1,external:2}; return (o[a.type]||2)-(o[b.type]||2);
+  }), [staffList]);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const { data } = await getSupabase().from('staff_bonuses').select('*').order('date', {ascending:false});
+      setBonuses(data||[]);
+    } finally { setLoading(false); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function addBonus() {
+    if (!form.staff_id || !form.amount || !form.date) { setMsg('スタッフ・金額・日付を入力してください'); return; }
+    setAdding(true); setMsg('');
+    try {
+      const { data, error } = await getSupabase().from('staff_bonuses')
+        .insert({ staff_id: form.staff_id, amount: Number(form.amount), date: form.date, note: form.note||null })
+        .select().single();
+      if (error) { setMsg('❌ テーブルが存在しません。Supabaseで add-staff-bonuses-table.sql を実行してください。'); return; }
+      setBonuses(prev => [data, ...prev]);
+      setForm(f=>({...f, staff_id:'', amount:'', note:''}));
+      setShowAdd(false);
+    } finally { setAdding(false); }
+  }
+
+  async function deleteBonus(id) {
+    if (!confirm('削除しますか？')) return;
+    await getSupabase().from('staff_bonuses').delete().eq('id', id);
+    setBonuses(prev => prev.filter(b=>b.id!==id));
+  }
+
+  function staffName(id) { return staffList?.find(s=>s.id===id)?.name || '不明'; }
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle>臨時払い管理</SectionTitle>
+      <p className="text-xs text-gray-500 -mt-2">スタッフへの特別対応・臨時ボーナスを記録します。精算の費用合計に反映されます。</p>
+      {loading ? <Spinner /> : (
+        <div className="space-y-2">
+          {bonuses.map(b => (
+            <Card key={b.id} className="p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{staffName(b.staff_id)}　<span className="text-primary font-bold">{fmt(b.amount)}</span></p>
+                  <p className="text-xs text-gray-400">{b.date}{b.note ? '　' + b.note : ''}</p>
+                </div>
+                <button onClick={() => deleteBonus(b.id)} className="text-red-400 text-sm px-2">×</button>
+              </div>
+            </Card>
+          ))}
+          {bonuses.length === 0 && <p className="text-sm text-gray-400 text-center py-4">臨時払いの記録がありません</p>}
+        </div>
+      )}
+      {msg && <p className="text-sm text-red-500">{msg}</p>}
+      {showAdd ? (
+        <Card className="p-4 space-y-3">
+          <p className="text-sm font-medium text-gray-700">臨時払いを追加</p>
+          <div className="flex gap-2 flex-wrap">
+            {activeStaff.map(s => (
+              <button key={s.id} onClick={() => setForm(f=>({...f, staff_id:s.id}))}
+                className={`px-3 py-1.5 rounded-lg text-sm border ${form.staff_id===s.id?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+          <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <AmountInput value={Number(form.amount)||0} onChange={v=>setForm(f=>({...f,amount:String(v)}))} />
+          <input type="text" placeholder="メモ（任意）" value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <div className="flex gap-2">
+            <button onClick={addBonus} disabled={adding} className="flex-1 bg-primary text-white rounded-lg py-2.5 font-medium disabled:opacity-50">
+              {adding ? '追加中...' : '追加'}
+            </button>
+            <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-gray-500 border border-gray-300 rounded-lg">キャンセル</button>
+          </div>
+        </Card>
+      ) : (
+        <button onClick={() => setShowAdd(true)} className="w-full border-2 border-dashed border-gray-200 rounded-xl py-3 text-sm text-gray-400 hover:border-primary/40 hover:text-primary transition-colors">
+          ＋ 臨時払いを追加
         </button>
       )}
     </div>
@@ -1508,7 +1607,7 @@ function VariableExpenseSection({ year, month }) {
             ))}
             <div className="flex justify-between text-sm font-medium text-gray-600 px-1 pt-2">
               <span>かわけん計: <span className="text-primary">{fmt(items.filter(i=>i.payer==='kawaken').reduce((s,i)=>s+i.amount,0))}</span></span>
-              <span>りょうこ計: <span className="text-purple-700">{fmt(items.filter(i=>i.payer==='ryoko').reduce((s,i)=>s+i.amount,0))}</span></span>
+              <span>りょうこ計: <span className="text-[#FA8072]">{fmt(items.filter(i=>i.payer==='ryoko').reduce((s,i)=>s+i.amount,0))}</span></span>
             </div>
           </div>
         )
@@ -1851,6 +1950,9 @@ function SummaryPage() {
         const { data: ss } = await sb.from('cleaning_shift_staff').select('*').in('shift_id', ids);
         shiftStaff = ss || [];
       }
+      // 臨時払い
+      const { data: bonusRows } = await sb.from('staff_bonuses').select('*').gte('date', from).lte('date', to).catch(()=>({data:[]}));
+      const bonuses = bonusRows || [];
 
       const jointProps = (props||[]).filter(p => p.include_settlement);
       const tachibana = (props||[]).find(p => !p.include_settlement);
@@ -1906,6 +2008,18 @@ function SummaryPage() {
       const profit = totalJointRevenue - totalExpenses;
       const eachShare = Math.floor(profit / 2);
 
+      // 山王・玉津 個別利益
+      const sannoFixedExp = (fixedExps||[]).filter(e=>e.property_id===sanno?.id).reduce((s,e)=>s+e.amount,0);
+      const tamatsuFixedExp = (fixedExps||[]).filter(e=>e.property_id===tamatsu?.id).reduce((s,e)=>s+e.amount,0);
+      const sannoVarExp = (varExps||[]).filter(e=>e.property_id===sanno?.id).reduce((s,e)=>s+e.amount,0);
+      const tamatsuVarExp = (varExps||[]).filter(e=>e.property_id===tamatsu?.id).reduce((s,e)=>s+e.amount,0);
+      const sannoShiftIds = (shifts||[]).filter(sh=>sh.property_id===sanno?.id).map(sh=>sh.id);
+      const tamatsuShiftIds = (shifts||[]).filter(sh=>sh.property_id===tamatsu?.id).map(sh=>sh.id);
+      const sannoCleaningExp = shiftStaff.filter(ss=>sannoShiftIds.includes(ss.shift_id)).reduce((s,ss)=>s+ss.total_fee,0);
+      const tamatsuCleaningExp = shiftStaff.filter(ss=>tamatsuShiftIds.includes(ss.shift_id)).reduce((s,ss)=>s+ss.total_fee,0);
+      const sannoProfit = sannoRev - sannoFixedExp - sannoVarExp - sannoCleaningExp;
+      const tamatsuProfit = tamatsuRev - tamatsuFixedExp - tamatsuVarExp - tamatsuCleaningExp;
+
       // 精算計算（清掃報酬は未払い・精算時にまとめて清算）:
       // かわけん実収支 = 山王売上 - 固定費立替 - 外部清掃費立替 - 変動費
       const kawakCash = sannoRev - jointFixedExp - externalCleaningFee - kawakVarExp;
@@ -1920,10 +2034,18 @@ function SummaryPage() {
       for (const ss of shiftStaff) {
         const st = staffList?.find(x=>x.id===ss.staff_id);
         if (!st) continue;
-        if (!staffPayments[ss.staff_id]) staffPayments[ss.staff_id] = { name:st.name, type:st.type, count:0, cleaning:0, transport:0 };
+        if (!staffPayments[ss.staff_id]) staffPayments[ss.staff_id] = { name:st.name, type:st.type, count:0, cleaning:0, transport:0, bonus:0 };
         staffPayments[ss.staff_id].count++;
         staffPayments[ss.staff_id].cleaning += ss.cleaning_fee||0;
         staffPayments[ss.staff_id].transport += ss.transport_fee||0;
+      }
+      // 臨時払いをstaffPaymentsに追加
+      const totalBonuses = bonuses.reduce((s,b)=>s+b.amount,0);
+      for (const b of bonuses) {
+        const st = staffList?.find(x=>x.id===b.staff_id);
+        if (!st) continue;
+        if (!staffPayments[b.staff_id]) staffPayments[b.staff_id] = { name:st.name, type:st.type, count:0, cleaning:0, transport:0, bonus:0 };
+        staffPayments[b.staff_id].bonus += b.amount;
       }
 
       // Tachibana summary
@@ -1936,7 +2058,8 @@ function SummaryPage() {
         jointFixedExp, allJointCleaningFee, ryokoTachiCleaningFee, kawakVarExp, ryokoVarExp,
         kawakCleaningFee, ryokoCleaningFee, ryokoTotalCleaningFee,
         totalExpenses, profit, eachShare, settlementAmount,
-        staffPayments,
+        sannoProfit, tamatsuProfit,
+        totalBonuses, staffPayments,
         tachibana: { revenue: tachiRev, fixedExp: tachiFixedExp, cleaningFee: tachiCleaningFee, varExp: tachiVarExp, profit: tachiRev - tachiFixedExp - tachiCleaningFee - tachiVarExp }
       });
       setLocked(!!lockRow);
@@ -1994,8 +2117,9 @@ function SummaryPage() {
               <Row label="清掃費・交通費（かわけん立替）" value={fmt(data.allJointCleaningFee)} sub="山王・玉津 全スタッフ合計" />
               <Row label="変動費（かわけん）" value={fmt(data.kawakVarExp)} />
               <Row label="変動費（りょうこ）" value={fmt(data.ryokoVarExp)} />
+              {data.totalBonuses > 0 && <Row label="臨時払い（かわけん立替）" value={fmt(data.totalBonuses)} />}
               <div className="border-t pt-2 mt-1">
-                <Row label="全費用合計" value={fmt(data.totalExpenses)} bold />
+                <Row label="全費用合計" value={fmt(data.totalExpenses + (data.totalBonuses||0))} bold />
               </div>
             </div>
           </Card>
@@ -2003,7 +2127,11 @@ function SummaryPage() {
           {/* Profit */}
           <Card className="p-4">
             <p className="font-bold text-gray-700 mb-3 text-sm">■ 利益（山王・玉津）</p>
-            <Row label="全利益" value={fmtSigned(data.profit)} bold valueClass={data.profit>=0?'text-green-600':'text-red-500'} />
+            <Row label="山王" value={fmtSigned(data.sannoProfit)} valueClass={data.sannoProfit>=0?'text-green-600':'text-red-500'} />
+            <Row label="玉津" value={fmtSigned(data.tamatsuProfit)} valueClass={data.tamatsuProfit>=0?'text-green-600':'text-red-500'} />
+            <div className="border-t pt-2 mt-1">
+              <Row label="全利益" value={fmtSigned(data.profit)} bold valueClass={data.profit>=0?'text-green-600':'text-red-500'} />
+            </div>
             <Row label="各自の取り分" value={fmtSigned(data.eachShare)} />
           </Card>
 
@@ -2049,12 +2177,12 @@ function SummaryPage() {
                   })
                   .map((sp, i) => {
                     const typeColor = {kawaken:'text-primary',ryoko:'text-[#FA8072]',external:'text-gray-700'};
-                    const total = sp.cleaning + sp.transport;
+                    const total = sp.cleaning + sp.transport + (sp.bonus||0);
                     return (
                       <div key={i} className="flex items-start justify-between py-1 border-b border-gray-50 last:border-0">
                         <div>
                           <p className={`font-medium text-sm ${typeColor[sp.type]||'text-gray-700'}`}>{sp.name}</p>
-                          <p className="text-xs text-gray-400">清掃{sp.count}回 ／ 清掃費{fmt(sp.cleaning)} ＋ 交通費{fmt(sp.transport)}</p>
+                          <p className="text-xs text-gray-400">清掃{sp.count}回 ／ 清掃費{fmt(sp.cleaning)} ＋ 交通費{fmt(sp.transport)}{sp.bonus>0?' ＋ 臨時'+fmt(sp.bonus):''}</p>
                         </div>
                         <p className="font-bold text-gray-800 text-sm">{fmt(total)}</p>
                       </div>
@@ -2064,7 +2192,7 @@ function SummaryPage() {
                 <div className="border-t pt-2 mt-1 flex justify-between">
                   <span className="text-sm font-bold text-gray-700">合計</span>
                   <span className="text-sm font-bold text-gray-800">
-                    {fmt(Object.values(data.staffPayments).reduce((s,sp)=>s+sp.cleaning+sp.transport,0))}
+                    {fmt(Object.values(data.staffPayments).reduce((s,sp)=>s+sp.cleaning+sp.transport+(sp.bonus||0),0))}
                   </span>
                 </div>
               </div>
@@ -2110,10 +2238,17 @@ function Row({ label, value, sub, bold, valueClass='' }) {
 function ReportsPage() {
   const [selYear, setSelYear] = useState(today().year);
   const [tab, setTab] = useState('trend');
+  const [propFilter, setPropFilter] = useState('joint');
   const tabs = [
     { id:'trend', label:'推移' },
     { id:'expense', label:'費用内訳' },
     { id:'staff', label:'スタッフ' },
+  ];
+  const propOptions = [
+    { id:'joint', label:'山王+玉津' },
+    { id:'sanno', label:'山王' },
+    { id:'tamatsu', label:'玉津' },
+    { id:'tachi', label:'橘' },
   ];
 
   return (
@@ -2126,6 +2261,14 @@ function ReportsPage() {
             <button onClick={() => setSelYear(y=>y+1)} disabled={selYear>=today().year} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 disabled:opacity-30">›</button>
           </div>
         </div>
+        <div className="flex gap-1.5 mb-3 overflow-x-auto">
+          {propOptions.map(p => (
+            <button key={p.id} onClick={() => setPropFilter(p.id)}
+              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${propFilter===p.id?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
         <div className="flex">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
@@ -2136,19 +2279,20 @@ function ReportsPage() {
         </div>
       </div>
       <div className="p-4">
-        {tab==='trend' && <TrendChart year={selYear} />}
-        {tab==='expense' && <ExpenseBreakdownChart year={selYear} />}
+        {tab==='trend' && <TrendChart year={selYear} propFilter={propFilter} />}
+        {tab==='expense' && <ExpenseBreakdownChart year={selYear} propFilter={propFilter} />}
         {tab==='staff' && <StaffReport year={selYear} />}
       </div>
     </div>
   );
 }
 
-function TrendChart({ year }) {
+function TrendChart({ year, propFilter }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
   const [yearData, setYearData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const propLabels = { joint:'山王+玉津', sanno:'山王', tamatsu:'玉津', tachi:'橘' };
 
   useEffect(() => {
     async function load() {
@@ -2160,19 +2304,22 @@ function TrendChart({ year }) {
         sb.from('monthly_fixed_expenses').select('*').eq('year', year),
         sb.from('monthly_variable_expenses').select('*').eq('year', year),
       ]);
-      const jointProps = (props||[]).filter(p=>p.include_settlement);
+      const filterProps = propFilter === 'joint' ? (props||[]).filter(p=>p.include_settlement)
+        : propFilter === 'sanno' ? (props||[]).filter(p=>p.name==='山王')
+        : propFilter === 'tamatsu' ? (props||[]).filter(p=>p.name==='玉津')
+        : (props||[]).filter(p=>p.name==='橘');
       const monthly = Array.from({length:12},(_,i)=>{
         const m = i+1;
-        const rev = (revenues||[]).filter(r=>r.month===m&&jointProps.some(p=>p.id===r.property_id)).reduce((s,r)=>s+r.amount,0);
-        const exp = (fixedExps||[]).filter(e=>e.month===m&&jointProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0)
-          + (varExps||[]).filter(e=>e.month===m&&jointProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0);
+        const rev = (revenues||[]).filter(r=>r.month===m&&filterProps.some(p=>p.id===r.property_id)).reduce((s,r)=>s+r.amount,0);
+        const exp = (fixedExps||[]).filter(e=>e.month===m&&filterProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0)
+          + (varExps||[]).filter(e=>e.month===m&&filterProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0);
         return { month:m, revenue:rev, expense:exp, profit:rev-exp };
       });
       setYearData(monthly);
       setLoading(false);
     }
     load();
-  }, [year]);
+  }, [year, propFilter]);
 
   useEffect(() => {
     if (loading || !canvasRef.current) return;
@@ -2203,7 +2350,7 @@ function TrendChart({ year }) {
 
   return (
     <div>
-      <SectionTitle>月別 売上・費用・利益推移（山王・玉津）</SectionTitle>
+      <SectionTitle>月別 売上・費用・利益推移（{propLabels[propFilter]}）</SectionTitle>
       {loading ? <Spinner /> : (
         <>
           <div className="grid grid-cols-3 gap-2 mb-4">
@@ -2223,11 +2370,12 @@ function TrendChart({ year }) {
   );
 }
 
-function ExpenseBreakdownChart({ year }) {
+function ExpenseBreakdownChart({ year, propFilter }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
   const [yearData, setYearData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const propLabels = { joint:'山王+玉津', sanno:'山王', tamatsu:'玉津', tachi:'橘' };
 
   useEffect(() => {
     async function load() {
@@ -2238,18 +2386,21 @@ function ExpenseBreakdownChart({ year }) {
         sb.from('monthly_fixed_expenses').select('*').eq('year', year),
         sb.from('monthly_variable_expenses').select('*').eq('year', year),
       ]);
-      const jointProps = (props||[]).filter(p=>p.include_settlement);
+      const filterProps = propFilter === 'joint' ? (props||[]).filter(p=>p.include_settlement)
+        : propFilter === 'sanno' ? (props||[]).filter(p=>p.name==='山王')
+        : propFilter === 'tamatsu' ? (props||[]).filter(p=>p.name==='玉津')
+        : (props||[]).filter(p=>p.name==='橘');
       const monthly = Array.from({length:12},(_,i)=>{
         const m = i+1;
-        const fixed = (fixedExps||[]).filter(e=>e.month===m&&jointProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0);
-        const variable = (varExps||[]).filter(e=>e.month===m&&jointProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0);
+        const fixed = (fixedExps||[]).filter(e=>e.month===m&&filterProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0);
+        const variable = (varExps||[]).filter(e=>e.month===m&&filterProps.some(p=>p.id===e.property_id)).reduce((s,e)=>s+e.amount,0);
         return { month:m, fixed, variable };
       });
       setYearData(monthly);
       setLoading(false);
     }
     load();
-  }, [year]);
+  }, [year, propFilter]);
 
   useEffect(() => {
     if (loading || !canvasRef.current) return;
@@ -2277,7 +2428,7 @@ function ExpenseBreakdownChart({ year }) {
 
   return (
     <div>
-      <SectionTitle>月別 費用内訳（山王・玉津）</SectionTitle>
+      <SectionTitle>月別 費用内訳（{propLabels[propFilter]}）</SectionTitle>
       {loading ? <Spinner /> : (
         <Card className="p-4">
           <div className="chart-container"><canvas ref={canvasRef}></canvas></div>
