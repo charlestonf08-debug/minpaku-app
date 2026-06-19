@@ -1950,9 +1950,12 @@ function SummaryPage() {
         const { data: ss } = await sb.from('cleaning_shift_staff').select('*').in('shift_id', ids);
         shiftStaff = ss || [];
       }
-      // 臨時払い
-      const { data: bonusRows } = await sb.from('staff_bonuses').select('*').gte('date', from).lte('date', to).catch(()=>({data:[]}));
-      const bonuses = bonusRows || [];
+      // 臨時払い（テーブルが未作成の場合は空配列）
+      let bonuses = [];
+      try {
+        const { data: bonusRows } = await sb.from('staff_bonuses').select('*').gte('date', from).lte('date', to);
+        bonuses = bonusRows || [];
+      } catch(e) { /* staff_bonuses table may not exist yet */ }
 
       const jointProps = (props||[]).filter(p => p.include_settlement);
       const tachibana = (props||[]).find(p => !p.include_settlement);
