@@ -339,6 +339,7 @@ function SettingsPage() {
   const tabs = [
     { id:'staff', label:'スタッフ' },
     { id:'transport', label:'交通費' },
+    { id:'recurring', label:'定期費用' },
     { id:'system', label:'システム' },
   ];
   return (
@@ -347,7 +348,7 @@ function SettingsPage() {
         <div className="flex">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${tab===t.id ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>
+              className={`flex-1 py-2.5 text-xs font-medium border-b-2 transition-colors ${tab===t.id ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>
               {t.label}
             </button>
           ))}
@@ -356,6 +357,7 @@ function SettingsPage() {
       <div className="p-4">
         {tab === 'staff' && <StaffSettings />}
         {tab === 'transport' && <TransportFeeSettings />}
+        {tab === 'recurring' && <RecurringExpensesSettings />}
         {tab === 'system' && <SystemSettings />}
       </div>
     </div>
@@ -513,6 +515,124 @@ function TransportFeeSettings() {
           </div>
         </Card>
       ))}
+    </div>
+  );
+}
+
+function RecurringExpensesSettings() {
+  const { data: properties } = useData('properties', '*');
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState({});
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ property_id:'', category:'家賃', amount:0 });
+  const [adding, setAdding] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  async function load() {
+    setLoading(true);
+    const { data } = await getSupabase().from('recurring_expenses').select('*').order('created_at');
+    setItems(data || []);
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  const propName = id => properties.find(p => p.id === id)?.name || '?';
+
+  async function saveAmount(id, amount) {
+    setSaving(s => ({...s, [id]: true}));
+    await getSupabase().from('recurring_expenses').update({ amount }).eq('id', id);
+    setItems(prev => prev.map(i => i.id === id ? {...i, amount} : i));
+    setSaving(s => { const n={...s}; delete n[id]; return n; });
+  }
+
+  async function toggleActive(id, active) {
+    await getSupabase().from('recurring_expenses').update({ active }).eq('id', id);
+    setItems(prev => prev.map(i => i.id === id ? {...i, active} : i));
+  }
+
+  async function deleteItem(id) {
+    if (!confirm('削除しますか？')) return;
+    await getSupabase().from('recurring_expenses').delete().eq('id', id);
+    setItems(prev => prev.filter(i => i.id !== id));
+  }
+
+  async function addItem() {
+    if (!form.property_id || !form.category || !form.amount) { setMsg('物件・カテゴリ・金額を入力してください'); return; }
+    setAdding(true); setMsg('');
+    try {
+      const { data, error } = await getSupabase().from('recurring_expenses').insert({ ...form, amount: Number(form.amount) }).select().single();
+      if (error) { setMsg('❌ ' + error.message); return; }
+      setItems(prev => [...prev, data]);
+      setForm({ property_id:'', category:'家賃', amount:0 });
+      setShowAdd(false);
+    } finally { setAdding(false); }
+  }
+
+  const sortedProps = [...properties].sort((a,b)=>a.sort_order-b.sort_order);
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle>定期固定費テンプレート</SectionTitle>
+      <p className="text-xs text-gray-500 -mt-2">毎月の家賃・ゴミ・Wi-Fiなどの定額費用を登録。収支入力の「定期費用を自動入力」ボタンで一括入力できます。</p>
+      {loading ? <Spinner /> : (
+        <div className="space-y-2">
+          {items.map(item => (
+            <Card key={item.id} className={`p-3 ${!item.active ? 'opacity-60' : ''}`}>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800">{propName(item.property_id)}｜{item.category}</p>
+                </div>
+                <div className="w-28 flex-shrink-0">
+                  <AmountInput value={item.amount} onChange={v => saveAmount(item.id, v)} />
+                </div>
+                <button onClick={() => toggleActive(item.id, !item.active)}
+                  className={`text-xs px-2 py-1 rounded border flex-shrink-0 ${item.active ? 'text-green-600 border-green-200 bg-green-50' : 'text-gray-400 border-gray-200'}`}>
+                  {item.active ? 'ON' : 'OFF'}
+                </button>
+                <button onClick={() => deleteItem(item.id)} className="text-xs text-red-400 flex-shrink-0">×</button>
+                {saving[item.id] && <span className="text-xs text-primary">保存</span>}
+              </div>
+            </Card>
+          ))}
+          {items.length === 0 && <p className="text-sm text-gray-400 text-center py-4">登録された定期費用がありません</p>}
+        </div>
+      )}
+
+      {msg && <p className="text-sm">{msg}</p>}
+
+      {showAdd ? (
+        <Card className="p-4 space-y-3">
+          <p className="text-sm font-medium text-gray-700">新規追加</p>
+          <div className="flex gap-2 flex-wrap">
+            {sortedProps.map(p => (
+              <button key={p.id} onClick={() => setForm(f=>({...f, property_id:p.id}))}
+                className={`px-3 py-1.5 rounded-lg text-sm border ${form.property_id===p.id?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {FIXED_EXPENSE_CATEGORIES.map(c => (
+              <button key={c} onClick={() => setForm(f=>({...f, category:c}))}
+                className={`px-3 py-1.5 rounded-lg text-sm border ${form.category===c?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
+                {c}
+              </button>
+            ))}
+          </div>
+          <AmountInput value={form.amount} onChange={v => setForm(f=>({...f, amount:v}))} />
+          <div className="flex gap-2">
+            <button onClick={addItem} disabled={adding} className="flex-1 bg-primary text-white rounded-lg py-2.5 font-medium disabled:opacity-50">
+              {adding ? '追加中...' : '追加'}
+            </button>
+            <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-gray-500 border border-gray-300 rounded-lg">キャンセル</button>
+          </div>
+        </Card>
+      ) : (
+        <button onClick={() => setShowAdd(true)} className="w-full border-2 border-dashed border-gray-200 rounded-xl py-3 text-sm text-gray-400 hover:border-primary/40 hover:text-primary transition-colors">
+          ＋ 定期費用を追加
+        </button>
+      )}
     </div>
   );
 }
@@ -1127,6 +1247,7 @@ function FixedExpenseSection({ year, month }) {
   const { data: properties } = useData('properties', '*');
   const [expenses, setExpenses] = useState({});
   const [saving, setSaving] = useState({});
+  const [applying, setApplying] = useState(false);
 
   const jointProps = useMemo(() => properties.filter(p => p.include_settlement).sort((a,b)=>a.sort_order-b.sort_order), [properties]);
 
@@ -1164,9 +1285,29 @@ function FixedExpenseSection({ year, month }) {
     return expenses[`${propId}-${cat}`]?.amount || 0;
   }
 
+  async function applyRecurring() {
+    setApplying(true);
+    try {
+      const sb = getSupabase();
+      const { data: recurring } = await sb.from('recurring_expenses').select('*').eq('active', true);
+      for (const r of (recurring || [])) {
+        const k = `${r.property_id}-${r.category}`;
+        if (!expenses[k]?.id) {
+          await saveExpense(r.property_id, r.category, r.amount);
+        }
+      }
+    } finally { setApplying(false); }
+  }
+
   return (
     <div>
-      <SectionTitle>固定費入力（かわけん立替）</SectionTitle>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-bold text-gray-700">固定費入力（かわけん立替）</h2>
+        <button onClick={applyRecurring} disabled={applying}
+          className="text-xs text-primary border border-primary/30 bg-primary/5 px-3 py-1.5 rounded-lg disabled:opacity-50 flex-shrink-0">
+          {applying ? '入力中...' : '📋 定期費用を自動入力'}
+        </button>
+      </div>
       <div className="space-y-4">
         {jointProps.map(p => (
           <Card key={p.id} className="p-4">
@@ -1398,6 +1539,176 @@ function CleaningExpenseSection({ year, month }) {
         )
       )}
     </div>
+  );
+}
+
+// ============================================================
+// PRIOR SETTLEMENT CARD (前期清算済み 2026年2〜5月)
+// ============================================================
+const PRIOR_DATA = {
+  sanno: {
+    name: '山王',
+    months: [
+      { m:'2月', 家賃:0, 電気代:126, ガス代:0, 水道代:769, Wi-Fi費:0, ゴミ回収費:0, 清掃費:0, 消耗品費:0, 売上:0 },
+      { m:'3月', 家賃:194000, 電気代:2905, ガス代:0, 水道代:0, Wi-Fi費:0, ゴミ回収費:0, 清掃費:0, 消耗品費:0, 売上:0 },
+      { m:'4月', 家賃:193028, 電気代:1116, ガス代:735, 水道代:0, Wi-Fi費:8550, ゴミ回収費:0, 清掃費:0, 消耗品費:0, 売上:0 },
+      { m:'5月', 家賃:209330, 電気代:1710, ガス代:735, 水道代:0, Wi-Fi費:9650, ゴミ回収費:0, 清掃費:41360, 消耗品費:0, 売上:95836 },
+    ]
+  },
+  tamatsu: {
+    name: '玉津',
+    months: [
+      { m:'2月', 家賃:0, 電気代:0, ガス代:0, 水道代:780, Wi-Fi費:0, ゴミ回収費:0, 清掃費:0, 消耗品費:0, 売上:0 },
+      { m:'3月', 家賃:152130, 電気代:1102, ガス代:0, 水道代:1540, Wi-Fi費:4842, ゴミ回収費:0, 清掃費:0, 消耗品費:0, 売上:0 },
+      { m:'4月', 家賃:152130, 電気代:1639, ガス代:0, 水道代:1680, Wi-Fi費:7279, ゴミ回収費:0, 清掃費:0, 消耗品費:0, 売上:0 },
+      { m:'5月', 家賃:152130, 電気代:1763, ガス代:735, 水道代:1680, Wi-Fi費:3979, ゴミ回収費:0, 清掃費:0, 消耗品費:0, 売上:0 },
+    ]
+  }
+};
+
+function PriorSettlementCard() {
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState(null); // 'sanno' | 'tamatsu' | null
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState('');
+
+  const initCost = 5054695;
+  const fixedCost = 1147423;
+  const revenue = 95836;
+  const perPerson = Math.ceil((initCost + fixedCost - revenue) / 2);
+
+  async function seedHistorical() {
+    if (!confirm('2〜5月の実績データをDBに入力します。既存データは上書きされません。続けますか？')) return;
+    setSeeding(true); setSeedMsg('');
+    try {
+      const sb = getSupabase();
+      const { data: props } = await sb.from('properties').select('*');
+      const sanno = props?.find(p=>p.name==='山王');
+      const tamatsu = props?.find(p=>p.name==='玉津');
+      const monthNums = { '2月':2, '3月':3, '4月':4, '5月':5 };
+      const fixedCats = ['家賃','電気代','ガス代','水道代','Wi-Fi費','ゴミ回収費'];
+
+      for (const [key, prop] of [['sanno', sanno], ['tamatsu', tamatsu]]) {
+        if (!prop) continue;
+        const pData = PRIOR_DATA[key];
+        for (const row of pData.months) {
+          const mn = monthNums[row.m];
+          // Fixed expenses
+          for (const cat of fixedCats) {
+            const amount = row[cat] || 0;
+            if (amount === 0) continue;
+            const { data: ex } = await sb.from('monthly_fixed_expenses').select('id')
+              .eq('property_id', prop.id).eq('year', 2026).eq('month', mn).eq('category', cat).maybeSingle();
+            if (!ex) {
+              await sb.from('monthly_fixed_expenses').insert({ property_id: prop.id, year:2026, month:mn, category:cat, amount, payer:'kawaken' });
+            }
+          }
+          // 清掃費 as variable expense
+          if ((row['清掃費']||0) > 0) {
+            const { data: ex } = await sb.from('monthly_variable_expenses').select('id')
+              .eq('property_id', prop.id).eq('year', 2026).eq('month', mn).eq('category', '清掃費').maybeSingle();
+            if (!ex) {
+              await sb.from('monthly_variable_expenses').insert({ property_id: prop.id, year:2026, month:mn, category:'清掃費', amount:row['清掃費'], payer:'kawaken', memo:'前期実績' });
+            }
+          }
+          // Revenue
+          if ((row['売上']||0) > 0) {
+            const { data: ex } = await sb.from('monthly_revenue').select('id')
+              .eq('property_id', prop.id).eq('year', 2026).eq('month', mn).maybeSingle();
+            if (!ex) {
+              await sb.from('monthly_revenue').insert({ property_id: prop.id, year:2026, month:mn, amount:row['売上'] });
+            }
+          }
+        }
+      }
+      // 立上げ初期費 as variable expense for Feb (shared / kawaken)
+      if (sanno) {
+        const { data: ex } = await sb.from('monthly_variable_expenses').select('id')
+          .eq('property_id', sanno.id).eq('year', 2026).eq('month', 2).eq('category', '立上げ初期費').maybeSingle();
+        if (!ex) {
+          await sb.from('monthly_variable_expenses').insert({ property_id: sanno.id, year:2026, month:2, category:'立上げ初期費', amount:5054695, payer:'kawaken', memo:'初期費用（山王・玉津 折半清算済み）' });
+        }
+      }
+      setSeedMsg('✅ 2〜5月の実績データを入力しました。');
+    } catch(e) { setSeedMsg('❌ ' + e.message); }
+    finally { setSeeding(false); }
+  }
+
+  return (
+    <Card className="p-4 border-gray-200 bg-gray-50">
+      <button onClick={() => setOpen(o=>!o)} className="w-full flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">清算済</span>
+          <p className="text-sm font-bold text-gray-600">前期記録（2026年2〜5月）</p>
+        </div>
+        <span className="text-gray-400 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="mt-3 border-t pt-3 space-y-3">
+          {/* Summary */}
+          <div className="space-y-1">
+            <Row label="立上げ初期費" value={fmt(initCost)} />
+            <Row label="固定費合計（2〜5月）" value={fmt(fixedCost)} sub="家賃・光熱費等" />
+            <Row label="山王売上（5月）" value={fmt(revenue)} />
+            <div className="border-t pt-1">
+              <Row label="差引合計" value={fmtSigned(-(initCost + fixedCost - revenue))} bold valueClass="text-red-500" />
+            </div>
+          </div>
+          <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2 flex justify-between items-center">
+            <span className="text-xs text-green-700 font-medium">一人あたり負担（清算済み）</span>
+            <span className="text-sm font-bold text-green-700">{fmt(perPerson)}</span>
+          </div>
+
+          {/* Monthly detail toggle */}
+          <div>
+            <p className="text-xs text-gray-500 font-medium mb-2">月別・物件別明細</p>
+            <div className="flex gap-2 mb-2">
+              {['sanno','tamatsu'].map(k => (
+                <button key={k} onClick={() => setDetail(detail===k ? null : k)}
+                  className={`px-3 py-1 text-xs rounded-lg border ${detail===k ? 'bg-primary text-white border-primary' : 'border-gray-200 text-gray-500'}`}>
+                  {PRIOR_DATA[k].name}
+                </button>
+              ))}
+            </div>
+            {detail && (
+              <div className="space-y-2">
+                {PRIOR_DATA[detail].months.map(row => {
+                  const exp = ['家賃','電気代','ガス代','水道代','Wi-Fi費','ゴミ回収費','清掃費'].reduce((s,c)=>s+(row[c]||0),0);
+                  return (
+                    <div key={row.m} className="bg-white rounded-lg p-3 border border-gray-100">
+                      <p className="text-xs font-bold text-gray-600 mb-1">{row.m}</p>
+                      {['家賃','電気代','ガス代','水道代','Wi-Fi費','ゴミ回収費','清掃費'].map(cat => (row[cat]||0) > 0 ? (
+                        <div key={cat} className="flex justify-between text-xs text-gray-500 py-0.5">
+                          <span>{cat}</span><span>{fmt(row[cat])}</span>
+                        </div>
+                      ) : null)}
+                      <div className="border-t mt-1 pt-1 flex justify-between text-xs font-medium text-gray-700">
+                        <span>支出計</span><span>{fmt(exp)}</span>
+                      </div>
+                      {(row['売上']||0) > 0 && (
+                        <div className="flex justify-between text-xs font-medium text-green-600 mt-0.5">
+                          <span>売上</span><span>{fmt(row['売上'])}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* DB Seed button */}
+          <div className="border-t pt-3">
+            <p className="text-xs text-gray-400 mb-2">※ 6月より本アプリで管理。過去データをレポートに反映させる場合はDBに入力できます。</p>
+            {seedMsg && <p className="text-sm mb-2">{seedMsg}</p>}
+            <button onClick={seedHistorical} disabled={seeding}
+              className="w-full text-sm text-gray-600 border border-gray-300 bg-white px-4 py-2 rounded-lg disabled:opacity-50">
+              {seeding ? '入力中...' : '📥 2〜5月の実績をDBに入力する'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -1643,6 +1954,8 @@ function SummaryPage() {
               </div>
             </div>
           </Card>
+
+          <PriorSettlementCard />
         </div>
       )}
     </div>
