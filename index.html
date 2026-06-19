@@ -160,7 +160,7 @@ function SetupScreen({ onSetup }) {
       <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
           <div className="text-4xl mb-3">🏠</div>
-          <h1 className="text-2xl font-bold text-gray-800">民泊管理システム</h1>
+          <h1 className="text-2xl font-bold text-gray-800">我々は最強だ！<br/>ワクワク民泊管理システム</h1>
           <p className="text-gray-500 text-sm mt-2">初回設定：Supabase接続情報を入力</p>
         </div>
         <form onSubmit={handleSave} className="space-y-4">
@@ -213,7 +213,7 @@ function LoginScreen({ onLogin }) {
       <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
           <div className="text-4xl mb-3">🏠</div>
-          <h1 className="text-2xl font-bold text-gray-800">民泊管理システム</h1>
+          <h1 className="text-2xl font-bold text-gray-800">我々は最強だ！<br/>ワクワク民泊管理システム</h1>
           <p className="text-gray-500 text-sm mt-1">かわけん・りょうこ 共同運営</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-4">
@@ -1901,17 +1901,16 @@ function SummaryPage() {
       // 清掃費・交通費（山王・玉津、全スタッフ合計・かわけん立替）
       const allJointCleaningFee = externalCleaningFee + ownerJointCleaningFee;
 
-      // 費用合計・利益・折半
-      // りょうこ橘清掃報酬もかわけん負担なので精算費用に含める
-      const totalExpenses = jointFixedExp + allJointCleaningFee + ryokoTachiCleaningFee + kawakVarExp + ryokoVarExp;
+      // 費用合計・利益・折半（山王・玉津のみ、橘は別扱い）
+      const totalExpenses = jointFixedExp + allJointCleaningFee + kawakVarExp + ryokoVarExp;
       const profit = totalJointRevenue - totalExpenses;
       const eachShare = Math.floor(profit / 2);
 
       // 精算計算（清掃報酬は未払い・精算時にまとめて清算）:
       // かわけん実収支 = 山王売上 - 固定費立替 - 外部清掃費立替 - 変動費
       const kawakCash = sannoRev - jointFixedExp - externalCleaningFee - kawakVarExp;
-      // かわけんの目標 = 利益折半 + 自分の清掃報酬
-      const kawakFinal = eachShare + kawakCleaningFee;
+      // かわけんの目標 = 利益折半 + 自分の清掃報酬 - りょうこへの橘清掃費支払い
+      const kawakFinal = eachShare + kawakCleaningFee - ryokoTachiCleaningFee;
       // 精算額（負 → りょうこ→かわけん、正 → かわけん→りょうこ）
       const settlementAmount = kawakCash - kawakFinal;
 
@@ -1993,7 +1992,6 @@ function SummaryPage() {
             <div className="space-y-2">
               <Row label="固定費（かわけん立替）" value={fmt(data.jointFixedExp)} />
               <Row label="清掃費・交通費（かわけん立替）" value={fmt(data.allJointCleaningFee)} sub="山王・玉津 全スタッフ合計" />
-              {data.ryokoTachiCleaningFee > 0 && <Row label="りょうこ橘清掃報酬（かわけん負担・精算含む）" value={fmt(data.ryokoTachiCleaningFee)} />}
               <Row label="変動費（かわけん）" value={fmt(data.kawakVarExp)} />
               <Row label="変動費（りょうこ）" value={fmt(data.ryokoVarExp)} />
               <div className="border-t pt-2 mt-1">
@@ -2014,17 +2012,15 @@ function SummaryPage() {
             <p className="font-bold text-gray-700 mb-3 text-sm">■ 清掃報酬</p>
             <div className="space-y-2">
               <Row label="かわけん（山王・玉津）" value={fmt(data.kawakCleaningFee)} valueClass="text-primary" />
-              <div>
-                <Row label="りょうこ（山王・玉津・橘）" value={fmt(data.ryokoTotalCleaningFee)} valueClass="text-purple-600" />
-                {data.ryokoTachiCleaningFee > 0 && (
-                  <p className="text-xs text-gray-400 text-right">うち橘分 {fmt(data.ryokoTachiCleaningFee)}</p>
-                )}
-              </div>
+              <Row label="りょうこ（山王・玉津）" value={fmt(data.ryokoCleaningFee)} valueClass="text-[#FA8072]" />
+              {data.ryokoTachiCleaningFee > 0 && (
+                <Row label="りょうこ（橘）" value={fmt(data.ryokoTachiCleaningFee)} valueClass="text-[#FA8072]" />
+              )}
             </div>
           </Card>
 
           {/* Settlement result */}
-          <div className={`rounded-2xl p-5 ${data.settlementAmount >= 0 ? 'bg-primary' : 'bg-purple-600'}`}>
+          <div className={`rounded-2xl p-5 ${data.settlementAmount >= 0 ? 'bg-primary' : 'bg-[#FA8072]'}`}>
             <p className="text-white/70 text-xs font-medium mb-2">■ 精算結果</p>
             {data.settlementAmount === 0 ? (
               <p className="text-white text-xl font-bold text-center">精算なし（±0）</p>
@@ -2052,7 +2048,7 @@ function SummaryPage() {
                     return (o[a.type]??2) - (o[b.type]??2);
                   })
                   .map((sp, i) => {
-                    const typeColor = {kawaken:'text-primary',ryoko:'text-purple-600',external:'text-gray-700'};
+                    const typeColor = {kawaken:'text-primary',ryoko:'text-[#FA8072]',external:'text-gray-700'};
                     const total = sp.cleaning + sp.transport;
                     return (
                       <div key={i} className="flex items-start justify-between py-1 border-b border-gray-50 last:border-0">
