@@ -63,7 +63,7 @@
 <body class="min-h-screen" style="background-color:#fdf3e7">
 <div id="root"></div>
 
-<script type="text/babel">
+<script type="text/jsx-src">
 const { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } = React;
 
 // ============================================================
@@ -637,9 +637,28 @@ function RecurringExpensesSettings() {
   );
 }
 
+const JUNE_SHIFTS_2026 = [
+  { date:'2026-06-02', prop:'玉津', staff:['りょうこ','かわけん'] },
+  { date:'2026-06-05', prop:'橘',  staff:['ゆきこ','りょうこ'] },
+  { date:'2026-06-07', prop:'山王', staff:['かわけん','りょうこ'] },
+  { date:'2026-06-08', prop:'玉津', staff:['りょうこ','かわけん'] },
+  { date:'2026-06-10', prop:'橘',  staff:['りょうこ'] },
+  { date:'2026-06-12', prop:'橘',  staff:['みゃく','ゆきこ'] },
+  { date:'2026-06-14', prop:'玉津', staff:['かわけん','りょうこ'] },
+  { date:'2026-06-18', prop:'橘',  staff:['ゆうじ','みゃく'] },
+  { date:'2026-06-19', prop:'山王', staff:['ゆうじ','ゆきこ'] },
+  { date:'2026-06-22', prop:'山王', staff:['かわけん','ちゃん'] },
+  { date:'2026-06-23', prop:'玉津', staff:['りょうこ','ゆうじ'] },
+  { date:'2026-06-24', prop:'橘',  staff:['ちゃん','りょうこ','みゃく'] },
+  { date:'2026-06-25', prop:'山王', staff:['ゆうじ'] },
+  { date:'2026-06-28', prop:'山王', staff:['ゆうじ','ちゃん'] },
+];
+
 function SystemSettings() {
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState('');
+  const [seedingShifts, setSeedingShifts] = useState(false);
+  const [shiftMsg, setShiftMsg] = useState('');
 
   async function handleLogout() {
     await getSupabase().auth.signOut();
@@ -700,9 +719,88 @@ function SystemSettings() {
     } finally { setSeeding(false); }
   }
 
+  async function syncMonthShifts(year, month, shiftList) {
+    const sb = getSupabase();
+    const [{ data: allStaff }, { data: allProps }, { data: allTransport }] = await Promise.all([
+      sb.from('staff').select('*'),
+      sb.from('properties').select('*'),
+      sb.from('staff_transport_fees').select('*'),
+    ]);
+    const pad = n => String(n).padStart(2,'0');
+    const from = `${year}-${pad(month)}-01`;
+    const to = `${year}-${pad(month)}-${pad(daysInMonth(year,month))}`;
+
+    // 既存シフトを取得
+    const { data: existingShifts } = await sb.from('cleaning_shifts')
+      .select('id, date, property_id').gte('date', from).lte('date', to);
+
+    // 削除されたシフトを消す（タイムツリーになくなったもの）
+    let deleted = 0;
+    for (const ex of (existingShifts || [])) {
+      const prop = allProps?.find(p => p.id === ex.property_id);
+      const stillExists = shiftList.some(s => s.date === ex.date && s.prop === prop?.name);
+      if (!stillExists) {
+        await sb.from('cleaning_shift_staff').delete().eq('shift_id', ex.id);
+        await sb.from('cleaning_shifts').delete().eq('id', ex.id);
+        deleted++;
+      }
+    }
+
+    // 新しいシフトを追加
+    let added = 0, staffCount = 0;
+    for (const sh of shiftList) {
+      const prop = allProps?.find(p => p.name === sh.prop);
+      if (!prop) continue;
+      const already = (existingShifts || []).find(e => e.date === sh.date && e.property_id === prop.id);
+      if (already) continue; // 既存はスキップ
+      const { data: newShift, error } = await sb.from('cleaning_shifts')
+        .insert({ property_id: prop.id, date: sh.date, status: 'completed' }).select().single();
+      if (error || !newShift) continue;
+      added++;
+      const fee = sh.staff.length >= 2 ? 6000 : 8000;
+      for (const sName of sh.staff) {
+        const staffRec = allStaff?.find(s => s.name === sName);
+        if (!staffRec) continue;
+        const isKawakenTachi = staffRec.type === 'kawaken' && sh.prop === '橘';
+        const cleaningFee = isKawakenTachi ? 0 : fee;
+        const transport = allTransport?.find(t => t.staff_id === staffRec.id && t.property_id === prop.id)?.amount || 0;
+        await sb.from('cleaning_shift_staff').insert({
+          shift_id: newShift.id, staff_id: staffRec.id,
+          cleaning_fee: cleaningFee, transport_fee: transport, total_fee: cleaningFee + transport
+        });
+        staffCount++;
+      }
+    }
+    return { added, deleted, staffCount };
+  }
+
+  async function seedJuneShifts() {
+    if (!confirm('2026年6月のシフトをタイムツリーと同期します。\n追加：新規シフト登録\n削除：キャンセル済みシフトを削除\n\n続けますか？')) return;
+    setSeedingShifts(true); setShiftMsg('');
+    try {
+      const { added, deleted, staffCount } = await syncMonthShifts(2026, 6, JUNE_SHIFTS_2026);
+      setShiftMsg(`✅ 追加 ${added}件・削除 ${deleted}件（スタッフ ${staffCount}名分）`);
+    } catch(e) { setShiftMsg('❌ ' + e.message); }
+    finally { setSeedingShifts(false); }
+  }
+
   return (
     <div className="space-y-3">
       <SectionTitle>システム設定</SectionTitle>
+      <Card className="p-4">
+        <p className="text-sm font-medium text-gray-700 mb-1">6月シフト一括登録（タイムツリーより）</p>
+        <p className="text-xs text-gray-500 mb-2">2026年6月のタイムツリーシフトをアプリに登録します。既存シフトはスキップされます。</p>
+        <div className="bg-gray-50 rounded-lg p-2 mb-3 text-xs text-gray-500 space-y-0.5 max-h-32 overflow-y-auto">
+          {JUNE_SHIFTS_2026.map((sh,i) => (
+            <div key={i}>{sh.date.slice(5)} {sh.prop}：{sh.staff.join('・')}</div>
+          ))}
+        </div>
+        {shiftMsg && <p className="text-sm mb-2">{shiftMsg}</p>}
+        <button onClick={seedJuneShifts} disabled={seedingShifts}
+          className="text-sm text-primary border border-primary/30 bg-primary/5 px-4 py-2 rounded-lg disabled:opacity-50">
+          {seedingShifts ? '登録中...' : '📅 6月シフトを一括登録'}
+        </button>
+      </Card>
       <Card className="p-4">
         <p className="text-sm font-medium text-gray-700 mb-1">スタッフ初期設定</p>
         <p className="text-xs text-gray-500 mb-3">ゆうじ・みゃく・ちゃん・ゆきこ・もんもんと各交通費を一括登録します</p>
@@ -2405,15 +2503,15 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.10.4/babel.min.js"></script>
 <script>
-  // Manually run Babel on text/babel scripts after all dependencies load
+  // Manually run Babel on our JSX script after all dependencies load
   window.addEventListener('load', function() {
     if (document.getElementById('root').innerHTML === '') {
-      var scripts = document.querySelectorAll('script[type="text/babel"]');
+      var scripts = document.querySelectorAll('script[type="text/jsx-src"]');
       scripts.forEach(function(s) {
         try {
-          var result = Babel.transform(s.textContent, { presets: [['react', { runtime: 'classic' }]] });
+          var result = Babel.transform(s.textContent, { presets: ['react'] });
           var fn = new Function(result.code);
           fn();
         } catch(e) { console.error('Babel execution error:', e); }
