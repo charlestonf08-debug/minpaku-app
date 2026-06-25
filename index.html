@@ -1550,6 +1550,29 @@ function VariableExpenseSection({ year, month }) {
 
   const sortedProps = useMemo(() => [...properties].sort((a,b)=>a.sort_order-b.sort_order), [properties]);
 
+  const propOptions = useMemo(() => [
+    ...sortedProps.map(p => ({ id: p.id, label: p.name, special: false })),
+    { id: 'joint_sy', label: '山,玉 共通', special: true },
+    { id: 'joint_all', label: '山,玉,橘 共通', special: true },
+  ], [sortedProps]);
+
+  // 按分プレビュー
+  const splitPreview = useMemo(() => {
+    if (!form.amount) return null;
+    const sanno = sortedProps.find(p=>p.name==='山王');
+    const tamatsu = sortedProps.find(p=>p.name==='玉津');
+    const tachi = sortedProps.find(p=>p.name==='橘');
+    if (form.property_id === 'joint_sy' && sanno && tamatsu) {
+      const half = Math.floor(form.amount / 2);
+      return [ { name:'山王', amt: form.amount - half }, { name:'玉津', amt: half } ];
+    }
+    if (form.property_id === 'joint_all' && sanno && tamatsu && tachi) {
+      const third = Math.floor(form.amount / 3);
+      return [ { name:'山王', amt: form.amount - third*2 }, { name:'玉津', amt: third }, { name:'橘', amt: third } ];
+    }
+    return null;
+  }, [form.property_id, form.amount, sortedProps]);
+
   async function load() {
     setLoading(true);
     const { data } = await getSupabase().from('monthly_variable_expenses').select('*').eq('year', year).eq('month', month).order('created_at', {ascending:false});
@@ -1563,8 +1586,31 @@ function VariableExpenseSection({ year, month }) {
     if (!form.property_id) { alert('物件を選択してください'); return; }
     if (!form.amount) { alert('金額を入力してください'); return; }
     setSaving(true);
+    const sb = getSupabase();
     try {
-      await getSupabase().from('monthly_variable_expenses').insert({ ...form, year, month });
+      if (form.property_id === 'joint_sy') {
+        const sanno = sortedProps.find(p=>p.name==='山王');
+        const tamatsu = sortedProps.find(p=>p.name==='玉津');
+        const half = Math.floor(form.amount / 2);
+        const memoTag = form.memo ? `【山玉共通】${form.memo}` : '【山玉共通】';
+        await sb.from('monthly_variable_expenses').insert([
+          { property_id: sanno.id, category: form.category, amount: form.amount - half, payer: form.payer, memo: memoTag, year, month },
+          { property_id: tamatsu.id, category: form.category, amount: half, payer: form.payer, memo: memoTag, year, month },
+        ]);
+      } else if (form.property_id === 'joint_all') {
+        const sanno = sortedProps.find(p=>p.name==='山王');
+        const tamatsu = sortedProps.find(p=>p.name==='玉津');
+        const tachi = sortedProps.find(p=>p.name==='橘');
+        const third = Math.floor(form.amount / 3);
+        const memoTag = form.memo ? `【山玉橘共通】${form.memo}` : '【山玉橘共通】';
+        await sb.from('monthly_variable_expenses').insert([
+          { property_id: sanno.id, category: form.category, amount: form.amount - third*2, payer: form.payer, memo: memoTag, year, month },
+          { property_id: tamatsu.id, category: form.category, amount: third, payer: form.payer, memo: memoTag, year, month },
+          { property_id: tachi.id, category: form.category, amount: third, payer: form.payer, memo: memoTag, year, month },
+        ]);
+      } else {
+        await sb.from('monthly_variable_expenses').insert({ ...form, year, month });
+      }
       setShowForm(false);
       setForm({ property_id:'', category:'消耗品', amount:0, payer:'kawaken', memo:'' });
       load();
@@ -1617,13 +1663,19 @@ function VariableExpenseSection({ year, month }) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">物件</label>
             <div className="flex gap-2 flex-wrap">
-              {sortedProps.map(p => (
+              {propOptions.map(p => (
                 <button key={p.id} onClick={() => setForm(f=>({...f, property_id:p.id}))}
-                  className={`px-3 py-1.5 rounded-lg text-sm border ${form.property_id===p.id?'bg-primary text-white border-primary':'border-gray-300 text-gray-600'}`}>
-                  {p.name}
+                  className={`px-3 py-1.5 rounded-lg text-sm border ${form.property_id===p.id?'bg-primary text-white border-primary':p.special?'border-orange-300 text-orange-600':'border-gray-300 text-gray-600'}`}>
+                  {p.label}
                 </button>
               ))}
             </div>
+            {splitPreview && (
+              <div className="mt-2 p-2 bg-orange-50 rounded-lg flex gap-3 text-xs text-orange-700">
+                <span>按分：</span>
+                {splitPreview.map(s => <span key={s.name}>{s.name} {fmt(s.amt)}</span>)}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">カテゴリ</label>
