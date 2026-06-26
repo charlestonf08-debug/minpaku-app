@@ -1606,6 +1606,7 @@ function VariableExpenseSection({ year, month }) {
         await sb.from('monthly_variable_expenses').insert([
           { property_id: sanno.id, category: form.category, amount: form.amount - third*2, payer: form.payer, memo: memoTag, year, month },
           { property_id: tamatsu.id, category: form.category, amount: third, payer: form.payer, memo: memoTag, year, month },
+          // 橘分：りょうこが支払った場合はりょうこ立替として精算時に返金
           { property_id: tachi.id, category: form.category, amount: third, payer: form.payer, memo: memoTag, year, month },
         ]);
       } else {
@@ -2107,15 +2108,22 @@ function SummaryPage() {
       const tachiFixedExp = tachibana ? (fixedExps||[]).filter(e=>e.property_id===tachibana.id).reduce((s,e)=>s+e.amount,0) : 0;
       const tachiCleaningFee = shiftStaff.filter(ss=>tachiShiftIds.includes(ss.shift_id)).reduce((s,ss)=>s+ss.total_fee,0);
       const tachiVarExp = tachibana ? (varExps||[]).filter(e=>e.property_id===tachibana.id).reduce((s,e)=>s+e.amount,0) : 0;
+      // りょうこが立替えた橘変動費（清算時にかわけんから返金）
+      const ryokoTachiVarExp = tachibana ? (varExps||[]).filter(e=>e.property_id===tachibana.id && e.payer==='ryoko').reduce((s,e)=>s+e.amount,0) : 0;
+
+      // かわけんの目標を再計算（橘変動費りょうこ立替分も含める）
+      const kawakFinalAdj = eachShare + kawakCleaningFee - ryokoTachiCleaningFee - ryokoTachiVarExp;
+      const settlementAmountAdj = kawakCash - kawakFinalAdj;
 
       setData({
         sannoRev, tamatsuRev, tachiRev, totalJointRevenue,
         jointFixedExp, allJointCleaningFee, ryokoTachiCleaningFee, kawakVarExp, ryokoVarExp,
         kawakCleaningFee, ryokoCleaningFee, ryokoTotalCleaningFee,
-        totalExpenses, profit, eachShare, settlementAmount,
+        totalExpenses, profit, eachShare, settlementAmount: settlementAmountAdj,
         sannoProfit, tamatsuProfit,
         totalBonuses, staffPayments,
-        tachibana: { revenue: tachiRev, fixedExp: tachiFixedExp, cleaningFee: tachiCleaningFee, varExp: tachiVarExp, profit: tachiRev - tachiFixedExp - tachiCleaningFee - tachiVarExp }
+        ryokoTachiVarExp,
+        tachibana: { revenue: tachiRev, fixedExp: tachiFixedExp, cleaningFee: tachiCleaningFee, varExp: tachiVarExp, ryokoVarExp: ryokoTachiVarExp, profit: tachiRev - tachiFixedExp - tachiCleaningFee - tachiVarExp }
       });
       setLocked(!!lockRow);
     } finally { setLoading(false); }
@@ -2262,6 +2270,9 @@ function SummaryPage() {
               <Row label="固定費" value={fmt(data.tachibana.fixedExp)} />
               <Row label="清掃費" value={fmt(data.tachibana.cleaningFee)} />
               <Row label="変動費" value={fmt(data.tachibana.varExp)} />
+              {data.tachibana.ryokoVarExp > 0 && (
+                <Row label="橘変動費（りょうこ立替・精算含む）" value={fmt(data.tachibana.ryokoVarExp)} valueClass="text-[#FA8072]" />
+              )}
               <div className="border-t pt-1 mt-1">
                 <Row label="純利益" value={fmtSigned(data.tachibana.profit)} bold valueClass={data.tachibana.profit>=0?'text-green-600':'text-red-500'} />
               </div>
